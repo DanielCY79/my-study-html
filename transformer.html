@@ -1,0 +1,1808 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="day">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="用九章互动实验拆开 Transformer，从分词一路算到下一个 token。">
+<title>Transformer 拆解手账</title>
+<style>
+:root {
+  color-scheme: light;
+  --paper: #f4ebe0;
+  --sheet: #fff9f1;
+  --canvas: #faf3e9;
+  --quiet: #efe4d7;
+  --border: #dacabc;
+  --grid: #e9ddce;
+  --ink: #342820;
+  --muted: #695a4e;
+  --accent: #983e2b;
+  --accent-ink: #fff8f0;
+  --tint: #f3ded3;
+  --green: #37665d;
+  --mint: #e1ebe3;
+  --gold: #795b28;
+  --wheat: #f1e5ca;
+  --violet: #625473;
+  --lavender: #ece4f0;
+  --wire: #886d58;
+  --shadow: 0 5px 18px #64432b0b;
+  --serif: Georgia, "Songti SC", "Noto Serif CJK SC", "SimSun", serif;
+  --sans: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+:root[data-theme="night"] {
+  color-scheme: dark;
+  --paper: #211e1a;
+  --sheet: #2a2520;
+  --canvas: #27231f;
+  --quiet: #332b25;
+  --border: #514237;
+  --grid: #372f28;
+  --ink: #f7e8d6;
+  --muted: #c4ae99;
+  --accent: #f0a28a;
+  --accent-ink: #321d16;
+  --tint: #462e27;
+  --green: #a1cbbd;
+  --mint: #2c3b34;
+  --gold: #e6c485;
+  --wheat: #3c3324;
+  --violet: #d5bde7;
+  --lavender: #392e43;
+  --wire: #ba9b80;
+  --shadow: 0 5px 18px #140e0a22;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  min-width: 300px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.6 var(--sans);
+  transition: background-color .25s, color .25s;
+}
+button, input { font: inherit; }
+button {
+  color: var(--ink);
+  cursor: pointer;
+}
+button:disabled { cursor: default; opacity: .43; }
+button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible, [role="button"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+a { color: var(--accent); }
+h1, h2, h3, p { margin: 0; }
+svg { display: block; }
+small { font-size: .82rem; }
+.wrap { width: min(1456px, calc(100% - 80px)); margin-inline: auto; }
+.masthead { border-bottom: 1px solid var(--border); }
+.masthead__inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 66px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 750; letter-spacing: .045em; font-size: .91rem; }
+.brand__mark { color: var(--accent); background: var(--tint); border: 1px solid var(--border); border-radius: 8px; padding: 6px; }
+.theme-button { white-space: nowrap; }
+.control, .choice, .token-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 35px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 11px;
+  background: var(--sheet);
+  font-size: .875rem;
+  line-height: 1.35;
+  transition: border-color .18s, background-color .18s, color .18s, transform .18s;
+}
+.control:hover:not(:disabled), .choice:hover, .token-button:hover { border-color: var(--accent); color: var(--accent); }
+.control:active:not(:disabled), .choice:active, .token-button:active { transform: translateY(1px); }
+.control--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.control--primary:hover:not(:disabled) { color: var(--accent-ink); filter: brightness(.92); }
+[aria-pressed="true"].choice, [aria-pressed="true"].token-button {
+  color: var(--accent);
+  background: var(--tint);
+  border-color: var(--accent);
+  font-weight: 650;
+}
+.hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; padding-block: 24px 19px; }
+.eyebrow { display: flex; align-items: center; gap: 8px; color: var(--accent); font-size: .85rem; font-weight: 750; letter-spacing: .11em; }
+.eyebrow::before { content: ""; width: 19px; border-top: 1px solid currentColor; }
+.hero h1 { margin: 8px 0 7px; font: 700 clamp(2rem, 4.1vw, 3.7rem)/1.17 var(--serif); letter-spacing: -.045em; }
+.hero h1 span { color: var(--accent); white-space: nowrap; }
+.hero p { color: var(--muted); font-size: .98rem; }
+.hero__route { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; color: var(--muted); font: .82rem var(--mono); white-space: nowrap; }
+.hero__route span:not(.route-arrow) { padding: 6px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--sheet); }
+.route-arrow { color: var(--accent); }
+.course { display: grid; grid-template-columns: 208px minmax(0, 1fr) 286px; align-items: start; gap: 16px; }
+.rail, .stage, .notes { min-width: 0; background: var(--sheet); border: 1px solid var(--border); border-radius: 13px; box-shadow: var(--shadow); }
+.rail, .notes { position: sticky; top: 14px; }
+.rail { padding: 16px 11px 13px; }
+.rail__heading, .notes__header, .stage__heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rail__heading { margin: 0 7px 12px; }
+.rail__heading h2, .notes__header h2 { font-size: .97rem; }
+.rail__heading span, .notes__header span, .stage__index { font: .75rem var(--mono); color: var(--muted); white-space: nowrap; }
+.rail__list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.rail__link {
+  width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px;
+  text-align: left; padding: 6px 8px; border: 1px solid transparent; border-radius: 7px; background: none;
+  font-size: .88rem; line-height: 1.35;
+}
+.rail__link:hover { background: var(--quiet); }
+.rail__link[aria-current="step"] { border-color: var(--border); background: var(--tint); color: var(--accent); font-weight: 750; }
+.rail__number { font: .77rem var(--mono); color: var(--muted); }
+.rail__link[aria-current="step"] .rail__number { color: inherit; }
+.rail__position { margin: 14px 6px 2px; display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; }
+.rail__position span { height: 3px; border-radius: 5px; background: var(--border); }
+.rail__position .is-past { background: var(--accent); }
+.stage { overflow: clip; }
+.stage__heading { min-height: 61px; padding: 11px 17px; flex-wrap: wrap; }
+.stage__title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.stage__title h2 { font-size: 1.12rem; line-height: 1.27; }
+.stage__index {
+  padding: 5px 7px; border-radius: 6px; color: var(--accent);
+  background: var(--tint); font-size: .82rem; font-weight: 700;
+}
+.hud { display: flex; gap: 5px; flex-wrap: wrap; }
+.chip { max-width: 100%; padding: 3px 7px; background: var(--quiet); border: 1px solid var(--border); border-radius: 5px; color: var(--muted); font-size: .77rem; overflow-wrap: anywhere; }
+.chip--live { color: var(--green); background: var(--mint); }
+.stage__source {
+  display: flex; gap: 8px; align-items: baseline;
+  padding: 8px 17px; border-block: 1px solid var(--border);
+  background: var(--quiet); font-size: .82rem; color: var(--muted);
+}
+.stage__source b { color: var(--accent); flex-shrink: 0; }
+.stage__canvas {
+  display: flex; flex-direction: column; align-items: center;
+  overflow: auto; max-height: clamp(390px, calc(100dvh - 408px), 650px); min-height: 475px;
+  padding: 12px 15px; background-color: var(--canvas);
+  background-image: linear-gradient(to right, var(--grid) 1px, transparent 1px), linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: 20px 20px;
+  scrollbar-color: var(--border) var(--canvas);
+}
+.lesson { flex: none; width: min(100%, 880px); margin: auto 0; min-width: 0; }
+.lesson__tools { display: flex; justify-content: space-between; gap: 8px 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.choices { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; min-width: 0; }
+.choices__label { font-size: .83rem; color: var(--muted); margin-right: 3px; }
+.stage__controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--border); }
+.stage__controls .control:first-child { justify-self: start; }
+.stage__controls .control:last-child { justify-self: end; }
+.notes { padding: 16px 15px; }
+.notes__header { padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+.notes__header div { display: flex; align-items: center; gap: 8px; }
+.notes__header svg { color: var(--accent); }
+.aside__steps { display: grid; gap: 5px; margin-bottom: 13px; }
+.aside__steps .choice { width: 100%; justify-content: flex-start; text-align: left; padding-inline: 8px; }
+.step-no { color: var(--accent); font: .72rem var(--mono); flex: none; }
+.note-page h3 { font: 700 1.38rem/1.35 var(--serif); margin-bottom: 8px; }
+.note-page p { color: var(--muted); font-size: .91rem; }
+.note-page blockquote { color: var(--ink); font-size: .87rem; background: var(--tint); border-left: 2px solid var(--accent); margin: 13px 0; padding: 8px 9px; border-radius: 0 6px 6px 0; }
+details { border: 1px solid var(--border); background: var(--canvas); border-radius: 8px; margin-top: 12px; font-size: .86rem; }
+summary { cursor: pointer; padding: 8px 9px; color: var(--accent); font-weight: 650; }
+.math { font: .82rem/1.62 var(--mono); overflow-wrap: anywhere; }
+details .math { border-top: 1px solid var(--border); padding: 9px; }
+details .math p + p { margin-top: 7px; }
+.footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; padding-block: 15px 24px; color: var(--muted); font-size: .8rem; }
+.keys { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+kbd { border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; background: var(--sheet); color: var(--ink); padding: 1px 5px; font: .73rem var(--mono); }
+.keys span + kbd { margin-left: 9px; }
+.scroll-x { max-width: 100%; overflow-x: auto; }
+.arch__svg { width: 100%; max-width: 535px; min-width: 470px; margin: auto; overflow: visible; }
+.arch__svg--single { max-width: 316px; min-width: 0; }
+.arch__frame { fill: var(--sheet); fill-opacity: .59; stroke: var(--wire); stroke-width: 1.15; stroke-dasharray: 5 5; }
+.arch__wire, .arch__bridge, .arch__residual { fill: none; stroke: var(--wire); stroke-width: 1.45; opacity: .82; transition: stroke .3s, opacity .3s, stroke-width .3s; }
+.arch__bridge { stroke: var(--green); stroke-width: 1.8; }
+.arch__residual { stroke-dasharray: 4 3; }
+.arch__wire.is-emphasis, .arch__bridge.is-emphasis, .arch__residual.is-emphasis { opacity: 1; stroke-width: 2.3; }
+.arch__node { cursor: pointer; color: var(--ink); }
+.arch__node rect, .arch__node circle { fill: var(--sheet); stroke: var(--border); stroke-width: 1.1; transition: fill .3s, stroke .3s; }
+.arch__node.is-emphasis rect, .arch__node.is-emphasis circle { stroke: var(--wire); }
+.arch__node:hover rect, .arch__node:hover circle, .arch__node:focus-visible rect, .arch__node:focus-visible circle { stroke: var(--accent); stroke-width: 2; }
+.arch__node.tint rect, .arch__node.tint circle { fill: var(--tint); }
+.arch__node.mint rect { fill: var(--mint); }
+.arch__node.wheat rect { fill: var(--wheat); }
+.arch__node.lavender rect { fill: var(--lavender); }
+.arch__node.arch__terminal:not(:hover):not(:focus-visible) rect { fill: transparent; stroke: transparent; }
+.arch__wave { fill: none; stroke: var(--violet); stroke-width: 1.3; }
+.arch__label { fill: var(--ink); font-size: 13px; font-weight: 650; }
+.arch__eyebrow { fill: var(--muted); font-size: 12px; }
+.arch__heading { fill: var(--accent); font-size: 14px; font-weight: 750; letter-spacing: .05em; }
+.arch__bridge-label { fill: var(--green); font: 11px var(--mono); }
+.arch__caption { display: flex; align-items: center; justify-content: center; gap: 4px 13px; flex-wrap: wrap; color: var(--muted); font-size: .78rem; text-align: center; margin-top: 4px; }
+.arch__legend { display: inline-flex; align-items: center; gap: 5px; }
+.legend-line { width: 19px; border-top: 2px solid var(--green); }
+.legend-line--residual { border-top: 2px dashed var(--wire); }
+.diagram-cue { color: var(--accent); }
+.diagram-cue--scroll { display: none; }
+.card, .worked { min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--sheet); padding: 10px; }
+.card h3, .worked h3 { margin-bottom: 5px; font-size: .93rem; }
+.card p, .worked p { color: var(--muted); }
+.worked { border-left: 2px solid var(--accent); }
+.stack { display: grid; gap: 9px; }
+.two-up, .three-up { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.three-up { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.step-focus { transition: border-color .27s, background-color .27s, box-shadow .27s; }
+.step-focus.is-current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.hint { font-size: .84rem; color: var(--muted); }
+.rule { color: var(--accent); font-weight: 650; }
+.term-row { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
+.token-button { min-width: 39px; }
+.token-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; min-height: 67px; }
+.token-strip__raw { background: var(--wheat); border: 1px solid var(--border); color: var(--gold); font: 700 1.57rem var(--serif); border-radius: 6px; padding: 7px 14px; }
+.scissors { display: inline-block; color: var(--accent); transform-origin: 60% 60%; transition: transform .3s; font-size: 1.4rem; }
+.is-cut .scissors { transform: rotate(-31deg) scale(1.14); }
+.token-card {
+  display: grid; text-align: center; gap: 3px; min-width: 49px;
+  padding: 6px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--mint); color: var(--green); transition: transform .35s, background-color .35s;
+}
+.is-cut .token-card { transform: translateY(-3px); }
+.token-strip .token-card { transition: transform .35s, opacity .3s; }
+.token-strip:not(.is-cut) .token-card { opacity: 0; transform: translateX(-7px); }
+.token-card small { font: .72rem var(--mono); color: var(--muted); min-height: 1em; }
+.vocab { display: grid; grid-template-columns: repeat(auto-fit, minmax(54px, 1fr)); gap: 6px; }
+.vocab .choice { display: flex; flex-wrap: wrap; }
+.vocab .choice[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--tint); }
+.roster { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); }
+.roster__entry {
+  display: flex; align-items: center; justify-content: space-between; gap: 4px;
+  min-height: 38px; padding: 4px 6px;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--quiet); color: var(--muted);
+  transition: background-color .25s, border-color .25s, color .25s;
+}
+.roster__id {
+  min-width: 22px; padding: 4px; border-radius: 4px; text-align: center;
+  font: .88rem/1 var(--mono);
+  transition: background-color .25s, color .25s;
+}
+.roster__entry.in-example {
+  border-color: var(--green); background: var(--mint); color: var(--green); font-weight: 750;
+}
+.roster__entry.in-example .roster__id { background: var(--green); color: var(--sheet); font-weight: 750; }
+.matrix-box { min-width: 0; }
+.matrix { border-collapse: separate; border-spacing: 2px; width: max-content; min-width: 100%; text-align: center; font: .78rem/1.25 var(--mono); }
+.matrix caption { text-align: left; font: 650 .84rem/1.36 var(--sans); color: var(--ink); margin-bottom: 4px; }
+.matrix td, .matrix th { padding: 4px 4px; border-radius: 3px; min-width: 27px; white-space: nowrap; }
+.matrix td { background: var(--quiet); color: var(--ink); transition: background-color .25s, color .25s; }
+.matrix th { color: var(--muted); font-weight: 500; }
+.matrix tbody th { text-align: left; }
+.matrix td.is-selected, .matrix tr.is-selected td { background: var(--tint); color: var(--accent); font-weight: 750; }
+.matrix th button { padding: 2px 3px; min-width: 25px; min-height: 25px; font: inherit; }
+.handoff { margin-bottom: 12px; border-color: var(--wire); }
+.handoff__tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 12px; margin-bottom: 8px; }
+.handoff__tools h3 { margin: 0; }
+.handoff__tools .token-button { min-height: 30px; }
+.handoff__flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; gap: 6px; }
+.handoff__side { min-width: 0; display: grid; gap: 5px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); }
+.handoff__side:last-child { border-color: var(--green); }
+.handoff__side h4 { margin: 0; color: var(--muted); font-size: .78rem; }
+.handoff__side p { color: var(--ink); }
+.handoff__datum { min-width: 0; }
+.handoff__datum + .handoff__datum { border-top: 1px solid var(--border); padding-top: 5px; }
+.handoff__datum b, .handoff__arrow { color: var(--green); }
+.handoff__arrow { align-self: center; font-weight: 750; }
+.handoff__trace { margin-bottom: 8px; }
+.vector { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.vector span { background: var(--quiet); border-radius: 4px; padding: 4px 5px; font: .79rem var(--mono); }
+.vector span.is-selected { color: var(--accent); background: var(--tint); font-weight: 750; }
+.slider-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 10px; }
+.slider-row label { color: var(--ink); font-size: .875rem; font-weight: 650; }
+.slider-row output { min-width: 30px; color: var(--accent); font-family: var(--mono); }
+input[type="range"] { accent-color: var(--accent); min-height: 26px; max-width: 100%; }
+.clocks { display: flex; justify-content: space-around; gap: 8px; flex-wrap: wrap; }
+.clock { display: grid; justify-items: center; text-align: center; flex: 1 1 125px; }
+.clock svg { width: 100px; height: 100px; }
+.clock__face { fill: var(--canvas); stroke: var(--wire); }
+.clock__axis { stroke: var(--border); }
+.clock__hand { color: var(--accent); transform-origin: 50px 50px; transition: transform .36s cubic-bezier(.22,.65,.28,1); }
+.clock:nth-child(2) .clock__hand { color: var(--green); }
+.clock__hand line { stroke: currentColor; stroke-width: 3; stroke-linecap: round; }
+.clock__hand circle { fill: currentColor; }
+.clock__axis-label { font: 8px var(--mono); fill: var(--muted); }
+.stamp .matrix td { background: var(--tint); color: var(--accent); }
+.attn-graph { width: 100%; height: 111px; }
+.attn-graph path { fill: none; stroke: var(--green); transition: stroke-width .35s, opacity .35s, stroke .35s; }
+.attn-graph path.is-masked { stroke: var(--wire); stroke-dasharray: 3 4; }
+.attn-graph rect { fill: var(--mint); stroke: var(--border); }
+.attn-graph .is-masked rect { fill: var(--quiet); }
+.attn-graph text { fill: var(--ink); font-size: 13px; dominant-baseline: middle; text-anchor: middle; }
+.attn-graph .is-masked text { fill: var(--muted); }
+.cake { display: flex; height: 17px; margin: 6px 0; border-radius: 5px; overflow: hidden; background: var(--quiet); }
+.cake > span { flex: 0 0 var(--portion, 0%); background: var(--accent); transition: flex-basis .4s; }
+.cake > span:nth-child(3n+2) { background: var(--green); }
+.cake > span:nth-child(3n+3) { background: var(--gold); }
+.cake-labels .token-card { border-top: 2px solid var(--accent); }
+.cake-labels .token-card:nth-child(3n+2) { border-top-color: var(--green); }
+.cake-labels .token-card:nth-child(3n+3) { border-top-color: var(--gold); }
+.bars { display: grid; gap: 3px; margin-top: 6px; }
+.bar { display: grid; grid-template-columns: 17px minmax(31px, 40px) 1fr; align-items: center; gap: 5px; font: .76rem var(--mono); }
+.bar i { width: var(--amount, 0%); min-height: 7px; border-radius: 3px; background: var(--accent); transition: width .34s; }
+.bar i.is-negative { background: var(--green); }
+.bulbs { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+.bulb { display: grid; justify-items: center; gap: 3px; min-width: 0; padding: 5px 1px; }
+.bulb svg { width: 23px; height: 24px; stroke: var(--muted); fill: var(--quiet); transition: fill .3s, stroke .3s; }
+.bulb.is-on svg { fill: var(--wheat); stroke: var(--gold); }
+.bulb small { font: .65rem var(--mono); }
+.prob-track { display: inline-block; position: relative; min-width: 52px; width: 100%; height: 5px; background: var(--border); border-radius: 5px; vertical-align: middle; }
+.prob-track i { position: absolute; inset: 0 auto 0 0; width: var(--portion, 0%); border-radius: 5px; background: var(--green); transition: width .4s; }
+.candidate--winner { color: var(--accent) !important; font-weight: 750 !important; }
+@media (max-width: 1270px) {
+  .wrap { width: calc(100% - 42px); }
+  .course { grid-template-columns: 174px minmax(0, 1fr) 248px; gap: 12px; }
+  .notes { padding-inline: 12px; }
+}
+@media (max-width: 1010px) {
+  .course { grid-template-columns: 147px minmax(0, 1fr) 216px; gap: 10px; }
+  .wrap { width: calc(100% - 26px); }
+  .rail { padding-inline: 7px; }
+  .rail__link { gap: 6px; padding-inline: 5px; }
+  .three-up { grid-template-columns: 1fr; }
+}
+@media (max-width: 860px) {
+  .course { grid-template-columns: minmax(0, 1fr) 229px; }
+  .rail { grid-column: 1 / -1; position: static; }
+  .rail__list { display: flex; overflow-x: auto; }
+  .rail__link { white-space: nowrap; padding-inline: 9px; }
+  .rail__position { display: none; }
+  .rail__heading { margin-bottom: 6px; }
+  .hero__route { display: none; }
+}
+@media (max-width: 660px) {
+  .wrap { width: calc(100% - 22px); }
+  .hero { padding-block: 25px 18px; }
+  .masthead__inner { min-height: 53px; }
+  .course { grid-template-columns: minmax(0, 1fr); }
+  .notes { position: static; }
+  .stage__canvas { padding: 10px; min-height: 350px; max-height: 64vh; }
+  .stage__heading { padding-inline: 11px; }
+  .stage__source { padding-inline: 11px; }
+  .arch__svg:not(.arch__svg--single) { min-width: 445px; }
+  .aside__steps { display: flex; flex-wrap: wrap; }
+  .aside__steps .choice { width: auto; }
+  .bulbs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .diagram-cue--scroll { display: inline; }
+  .handoff[data-expanded] .handoff__flow { grid-template-columns: minmax(0, 1fr); }
+  .handoff[data-expanded] .handoff__arrow { display: none; }
+}
+@media (max-width: 660px), (max-height: 810px) {
+  .stage { display: flex; flex-direction: column; }
+  .stage__canvas { order: 1; }
+  .stage__controls { border-top: 0; border-bottom: 1px solid var(--border); }
+}
+@media (max-width: 390px) {
+  .two-up { grid-template-columns: minmax(0, 1fr); }
+  .stage__controls { padding-inline: 8px; gap: 4px; }
+  .stage__controls .control { padding-inline: 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+</style>
+</head>
+<body>
+<header class="masthead">
+  <div class="wrap masthead__inner">
+    <div class="brand">
+      <svg class="brand__mark" width="33" height="33" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M3.5 3.5h5.2l1.3 1.2 1.3-1.2h5.2v11.7h-5.2L10 16.5l-1.3-1.3H3.5zM10 4.7v11.5M5.8 7h2.1m-2.1 2.5h2.1M12.4 7h1.9m-1.9 2.5h1.9" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      模型学习手账
+    </div>
+    <button class="control theme-button" id="theme" type="button"></button>
+  </div>
+</header>
+<main class="wrap">
+  <div class="hero">
+    <div>
+      <div class="eyebrow">交互式学习手账</div>
+      <h1>Transformer <span>拆解手账</span></h1>
+      <p>从「狗咬人」出发，动手跟一遍模型猜下一个词的过程。</p>
+    </div>
+    <div class="hero__route" aria-hidden="true"><span>「狗 咬 人」</span><span class="route-arrow">→</span><span>[ 数字 ]</span><span class="route-arrow">→</span><span>「下一个词」</span></div>
+  </div>
+  <div class="course">
+    <nav class="rail" aria-label="章节路线图">
+      <div class="rail__heading"><h2>章节路线图</h2><span id="rail-count"></span></div>
+      <ol class="rail__list" id="chapter-list"></ol>
+      <div class="rail__position" id="chapter-progress" aria-hidden="true"></div>
+    </nav>
+    <section class="stage" aria-labelledby="stage-title">
+      <header class="stage__heading">
+        <div class="stage__title"><span class="stage__index" id="stage-index"></span><h2 id="stage-title"></h2></div>
+        <div class="hud"><span class="chip chip--live" id="hud-phase"></span><span class="chip" id="hud-context"></span></div>
+      </header>
+      <div class="stage__source"><b id="stage-source-label">数值来源</b><span><span id="stage-source"></span> <a id="architecture-reference" href="https://arxiv.org/html/1706.03762v7#S3.F1" target="_blank" rel="noopener">论文图 1</a></span></div>
+      <div class="stage__canvas" id="stage-canvas"></div>
+      <div class="stage__controls" aria-label="演示控制">
+        <button class="control" id="previous" type="button">上一步</button>
+        <button class="control control--primary" id="play" type="button" aria-pressed="false" aria-keyshortcuts="Space"></button>
+        <button class="control" id="next" type="button">下一步</button>
+      </div>
+    </section>
+    <aside class="notes" aria-labelledby="notes-title">
+      <header class="notes__header">
+        <div>
+          <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m4 13 8.8-8.8 3 3L7 16H4v-3Zm7.5-7.3 2.8 2.8M3 18h14" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2 id="notes-title">逐步讲解</h2>
+        </div>
+        <span id="notes-count"></span>
+      </header>
+      <div id="notes-pages"></div>
+    </aside>
+  </div>
+  <footer class="footer">
+    <div class="keys"><kbd>←</kbd><kbd>→</kbd><span>切课</span><kbd>Space</kbd><span>播放 / 暂停</span></div>
+    <span>4 维向量 · 2 个注意力头 · 1 层计算练习</span>
+  </footer>
+</main>
+<script>
+"use strict";
+
+// 同一套教学参数服务于所有章节。词表下标就是 token ID。
+const VOCAB = ["狗", "咬", "人", "我", "爱", "吃", "苹果", "买", "手机"];
+const EMBEDDINGS = [
+  [.70, -.20, .10, .50], [.15, .65, -.30, .20], [-.10, .45, .75, -.25],
+  [.30, .10, .60, -.35], [.55, -.45, .20, .15], [-.25, .70, .35, .10],
+  [.80, .20, -.50, .25], [.10, -.35, .65, .45], [-.20, .50, -.10, .80]
+];
+const PRESETS = ["狗咬人", "人咬狗", "我爱吃苹果", "我吃苹果", "买苹果手机"];
+const LEARNED = {
+  Q: [[.60, -.20, .25, .10], [.20, .55, -.30, .15], [-.15, .35, .65, -.20], [.30, .10, .25, .70]],
+  K: [[.45, .20, -.25, .10], [-.25, .60, .15, .20], [.35, -.10, .55, .15], [.10, .25, -.20, .65]],
+  V: [[.75, -.10, .25, .15], [.10, .60, .20, -.35], [-.20, .30, .70, .20], [.25, .15, -.35, .65]]
+};
+const WO = [[.7, .2, -.2, .1], [-.3, .6, .2, .1], [.25, -.15, .65, .2], [.15, .1, -.25, .75]];
+const W1 = [
+  [.55, -.35, .45, .10, -.45, .30, .15, -.25],
+  [.20, .60, -.25, .45, .35, -.20, -.45, .15],
+  [-.40, .15, .65, -.35, .25, .55, .15, -.40],
+  [.35, -.25, .15, .55, -.20, .20, .60, .40]
+];
+const B1 = [.05, 0, -.10, .10, 0, -.05, .05, -.10];
+const W2 = [
+  [.45, .15, -.20, .30], [-.30, .50, .20, .10], [.15, -.40, .60, .20], [.25, .35, -.20, .45],
+  [-.40, .20, .35, -.10], [.50, -.20, .15, -.35], [.10, .45, -.25, .30], [-.15, .20, .40, .50]
+];
+const B2 = [0, .05, -.05, .10];
+const LM_ROWS = [
+  [.25, .10, -.35, .40], [.60, -.55, .15, .05], [-.35, .70, .20, -.25],
+  [.10, .15, .55, -.45], [.60, .15, -.30, -.15], [.35, -.10, .70, .20],
+  [-.25, .65, -.45, .35], [.20, -.40, .65, -.15], [-.55, .30, .15, .65]
+];
+const EPSILON = 1e-5;
+const vocabIds = new Map(VOCAB.map((word, i) => [word, i]));
+const matchingOrder = [...VOCAB].sort((a, b) => b.length - a.length);
+const range = n => Array.from({length: n}, (_, i) => i);
+const add = (a, b) => a.map((value, i) => value + b[i]);
+const dot = (a, b) => a.reduce((sum, value, i) => sum + value * b[i], 0);
+const column = (matrix, i) => matrix.map(row => row[i]);
+const project = (row, weights) => weights[0].map((_, i) => dot(row, column(weights, i)));
+const sum = values => values.reduce((total, value) => total + value, 0);
+function tokenize(text) {
+  const tokens = [];
+  let rest = text.replace(/\s/gu, "");
+  while (rest.length) {
+    const match = matchingOrder.find(word => rest.startsWith(word));
+    if (!match) throw new Error("词表中没有这个片段：" + rest);
+    tokens.push(match);
+    rest = rest.slice(match.length);
+  }
+  return tokens;
+}
+function initialWeights() {
+  // 固定随机种子让切换前后始终能比较同两套参数。
+  let seed = 4127;
+  const draw = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return Math.round((seed / 4294967296 - .5) * 140) / 100;
+  };
+  return Object.fromEntries(["Q", "K", "V"].map(kind => [kind, range(4).map(() => range(4).map(draw))]));
+}
+const INITIAL = initialWeights();
+const PE = pos => [Math.sin(pos), Math.cos(pos), Math.sin(pos / 100), Math.cos(pos / 100)];
+function softmax(scores) {
+  const exps = scores.map(value => Math.exp(value));
+  const total = sum(exps);
+  return {exps, total, probabilities: exps.map(value => value / total)};
+}
+function normalize(input) {
+  const mean = sum(input) / input.length;
+  const centered = input.map(value => value - mean);
+  const variance = sum(centered.map(value => value ** 2)) / input.length;
+  const sigma = Math.sqrt(variance + EPSILON);
+  return {input, mean, centered, variance, sigma, out: centered.map(value => value / sigma)};
+}
+function computePipeline(tokens, causal, {positionStart = 0, initialized = false, spike = 1, tied = false} = {}) {
+  if (tokens.length === 0) throw new Error("至少需要一个 token");
+  const ids = tokens.map(word => {
+    if (!vocabIds.has(word)) throw new Error("未登记的 token：" + word);
+    return vocabIds.get(word);
+  });
+  const E = ids.map(id => EMBEDDINGS[id]);
+  const positions = tokens.map((_, i) => positionStart + i);
+  const P = positions.map(PE);
+  const X = E.map((row, i) => add(row, P[i]));
+  const weights = initialized ? INITIAL : LEARNED;
+  const [Q, K, V] = ["Q", "K", "V"].map(kind => X.map(row => project(row, weights[kind])));
+  const heads = range(2).map(head => {
+    const split = matrix => matrix.map(row => row.slice(head * 2, head * 2 + 2));
+    const q = split(Q), k = split(K), v = split(V);
+    const rows = q.map((query, i) => {
+      const dots = k.map(key => dot(query, key));
+      const scores = dots.map(value => value / Math.sqrt(2));
+      const masked = scores.map((value, j) => causal && j > i ? -Infinity : value);
+      const distribution = softmax(masked);
+      const weighted = v.map((row, j) => row.map(value => value * distribution.probabilities[j]));
+      const out = range(2).map(dimension => sum(column(weighted, dimension)));
+      return {dots, scores, masked, ...distribution, weighted, out};
+    });
+    return {q, k, v, rows};
+  });
+  const concat = tokens.map((_, i) => heads.flatMap(head => head.rows[i].out));
+  const attnOut = concat.map(row => project(row, WO));
+  const branch = attnOut.map(row => row.map((value, i) => i === 0 ? value * spike : value));
+  const norm1 = X.map((row, i) => normalize(add(row, branch[i])));
+  const H = norm1.map(result => result.out);
+  const hidden = H.map(row => add(project(row, W1), B1));
+  const relu = hidden.map(row => row.map(value => Math.max(0, value)));
+  const ffnOut = relu.map(row => add(project(row, W2), B2));
+  const norm2 = H.map((row, i) => normalize(add(row, ffnOut[i])));
+  const Y = norm2.map(result => result.out);
+  const last = Y.at(-1);
+  const lmRows = tied ? EMBEDDINGS : LM_ROWS;
+  const logits = lmRows.map(row => dot(last, row));
+  const lm = softmax(logits);
+  const winner = logits.indexOf(Math.max(...logits));
+  return {tokens, ids, E, positions, P, X, weights, Q, K, V, heads, concat, attnOut, branch,
+    norm1, H, hidden, relu, ffnOut, norm2, Y, last, lmRows, logits, lm, winner};
+}
+
+const architectureViews = [
+  {name: "2017 论文双塔", context: "双塔 · 2017", source: "Encoder 与 Decoder 各堆叠 6 层。"},
+  {name: "Decoder-Only 教学版", context: "单塔 · 教学版", source: "由原图的 Decoder 推导，沿用原论文的子层设计。"}
+];
+
+const chapters = [
+  {
+    title: "全景地图",
+    steps: [
+      ["从底下往上读", "输入的 token 先查嵌入表，再加上正弦和余弦位置编码。Decoder 的输出经过线性投影和 Softmax，得到下一个 token 的概率。", "点图上的模块，可以跳到对应的计算练习。", "原论文的嵌入向量乘以 √d_model 再加位置编码。输入嵌入、输出嵌入与 Softmax 前的线性投影共享权重。"],
+      ["看两塔怎么传话", "左塔读取完整源序列。右塔接收右移的目标序列，用因果遮罩做自注意力。每层 Decoder 的第二个 Multi-Head Attention 子层从同层的上一子层取 Q，从 Encoder 最后一层的输出取 K 和 V。", "左塔读题，右塔一边查题一边写答案。", "Encoder 的两种子层依次是多头自注意力和逐位置前馈网络。\nDecoder 的三种子层依次是掩码多头自注意力、编码器–解码器多头注意力和逐位置前馈网络。\n两塔各堆叠 6 层。每个子层后执行 LayerNorm(x + Sublayer(x))。"],
+      ["跟着单塔往上走", "这张教学图从图 1 的 Decoder 出发，去掉 Encoder 和编码器–解码器注意力子层及其 Add & Norm。其余子层沿用原论文的顺序。", "提示词和已生成的 token 排成一串。用最后一个位置的概率预测下一个 token。", "因果多头自注意力 → Add & Norm → 逐位置 ReLU 前馈网络 → Add & Norm。\n第 02–08 章用 1 层、4 维向量和 2 个注意力头演示这条计算路径。"]
+    ]
+  },
+  {
+    title: "Token 分词器",
+    source: "预设原句与固定花名册。下标从 0 开始，就是整数 ID。",
+    steps: [
+      ["先看整张字条", "选一句短话。分词器从左向右读，每次优先认出花名册里最长的片段。", "「苹果」能作为一整张词卡。", "例如 tokenize(“我爱吃苹果”) → [我, 爱, 吃, 苹果]"],
+      ["把字条剪成词卡", "每剪出一张，顺序就记下来。现实中的 token 也可能是一个字、半个词、标点或一段字节。", "同一个「狗」，放在句首或句尾，领的是同一张词卡。", "tokens = [t₀, t₁, …, tₙ₋₁]"],
+      ["查花名册领整数", "把词卡拿去查表。一张卡换一个整数。手上现在是一串编号，下一章才会摞成矩阵。", "编号像图书馆索书号，跟意思有多像没有关系。", "IDᵢ = vocab[tᵢ]。输出形状为 [n]，每个元素都是整数。"]
+    ]
+  },
+  {
+    title: "Input Embedding",
+    source: "第 01 章输出的整数 ID，逐个查询词向量表 E（9×4）。",
+    steps: [
+      ["用编号打开抽屉", "花名册上的整数就是抽屉的行号。每个抽屉里有四个能随训练调整的数字。", "编号是门牌号，向量才是门后那一排数字。", "eᵢ = E[IDᵢ]，E ∈ ℝ^(9×4)"],
+      ["四个数字成一行", "在上面点一个抽屉，可以看到它的完整词向量。相同的词每次都从同一个抽屉取数。", "先看「狗」自己的四格，位置印章下一章才盖。", "eᵢ = [E[IDᵢ, 0], …, E[IDᵢ, 3]]"],
+      ["按词序把行摞起来", "一句话有几张词卡，就摞几行。默认「狗咬人」是 3 行 4 列。", "一句话先变成一张数字表。", "E[IDs] = stack(e₀, …, eₙ₋₁) ∈ ℝ^(n×4)。课堂 E 已吸收论文的 √d_model 固定缩放。"]
+    ]
+  },
+  {
+    title: "位置编码",
+    source: "第 02 章的词向量矩阵 E[IDs] 加上正弦和余弦位置编码，得到 X。",
+    steps: [
+      ["给词序盖个章", "「狗」从第一格挪到第三格，抽屉的四个数依然一样。模型给它盖上第三格的位置章。", "词卡管是谁，位置印章管站在哪里。", "PE(pos, 2i) = sin(pos / 10000^(2i/4))；PE(pos, 2i+1) = cos(pos / 10000^(2i/4))。"],
+      ["让两只钟一起转", "拖动首词 pos，后面的词跟着顺延。快钟每格走 1 弧度，慢钟每格只走 0.01 弧度。", "一对钟有两种转速，同一格就有四道刻度。", "在 d_model = 4 时，PE(pos) = [sin(pos), cos(pos), sin(pos/100), cos(pos/100)]。"],
+      ["同一格的数字相加", "第一格加第一格，第二格加第二格。行数和列数照旧，得到下一章使用的 X。", "印章盖上去，原来的字条大小不变。", "Xᵢ,ⱼ = E[IDᵢ, j] + PE(posᵢ, j)"]
+    ]
+  },
+  {
+    title: "生成 Q、K、V",
+    source: "第 03 章输出 X，分别右乘 4×4 的 W_Q、W_K、W_V。",
+    steps: [
+      ["三张表各问一件事", "一行 X 同时走三道门。Q 是我想找什么，K 是我能被怎样找到，V 是别人从我这带走的内容。", "带着问题 Q，去认门牌 K，最后拿走包裹 V。", "Q = X W_Q，K = X W_K，V = X W_V。三张结果均为 n×4。"],
+      ["点一列看乘加", "挑一个词，再点任意权重表的任意列。像拉拉链一样，把 X 的四格和这列四格一一乘上，再把四项加起来。", "一列权重，做出输出的一格。", "Qᵢ,ⱼ = Σₖ Xᵢ,ₖ W_Qₖ,ⱼ，K 与 V 同理。"],
+      ["权重怎么变得有用", "训练先给权重随机小数。猜错时，损失告诉优化器往哪边调，重复许多次就得到训练快照。推理时，固定权重产生随句子变化的 Q、K、V。", "权重表留在厨房，Q、K、V 是每次现做的菜。", "典型训练用交叉熵 L = −log p(正确下一个 token)，反向传播求 ∂L/∂W，优化器据此更新。这里的随机档有固定种子，训练后档用手设权重模拟快照。"]
+    ]
+  },
+  {
+    title: "Self-Attention",
+    source: "第 04 章的 Q/K/V 按维切成两头。拼接头输出后乘 4×4 的 W_O。",
+    steps: [
+      ["同一句话，分两副耳朵听", "每张四格卡切成前两格和后两格。两个头各拿一副两格的 Q、K、V。点一个词当提问者，再点一个头看账本。", "两副耳朵各听自己那一段。", "Q₁ = Q[:, 0:2]，Q₂ = Q[:, 2:4]，K/V 同样切。每头 dₖ = 2。"],
+      ["先算谁最对得上", "把提问的 Q 和每张 K 对着乘、合起来，再除以 √2。打开因果遮罩时，当前位置右边的分数直接写成 −∞。", "问题和门牌越对得上，分数越高。", "sᵢ,ⱼ = (qᵢ · kⱼ)/√2。因果遮罩令 j > i 的 sᵢ,ⱼ = −∞。"],
+      ["把分数切成 100% 蛋糕", "每个分数取指数，再除以所有指数的总和。未来词的指数是零，一口也分不到。", "注意力像一只蛋糕，每个头给当前提问者单独切一只。", "aᵢ,ⱼ = exp(sᵢ,ⱼ) / Σⱼ exp(sᵢ,ⱼ)，exp(−∞) = 0。"],
+      ["按份额拿走 V，再合头", "拿每张 V 乘上它分到的份额，把这些小包裹加起来。两头各给两格，横着拼成四格，再让 W_O 把四格重新混合。", "先按份取料，再把两盘菜拌到一起。", "Oₕ = softmax(QₕKₕᵀ/√2 + M)Vₕ。AttnOut = [O₁ | O₂] W_O。"]
+    ]
+  },
+  {
+    title: "Add & Norm",
+    source: "第 03 章的 X 走残差旁路，第 05 章的 AttnOut 走主路。",
+    steps: [
+      ["先接回绕过来的 X", "注意力带来了新消息，残差旁路把原词的四格送来相加。拖动滑块能让主路第一格变大，看看后面怎么收拾。", "旧字条和新消息叠在一起，原路还在。", "v = X + AttnOut。暴涨实验仅把 AttnOut 的第一格乘上滑块倍率，再进入这个加法。"],
+      ["找四格的平均值", "对同一个词的四个数求平均。隔壁词会自己算自己的平均值。", "先找到这张字条自己的水平线。", "μ = (v₁ + v₂ + v₃ + v₄) / 4"],
+      ["每格减掉平均值", "每个数都减掉刚才的平均值，四格中心就回到零。数值有多分散还得再量一次。", "把水平线搬回零。", "cᵢ = vᵢ − μ，variance = Σᵢ cᵢ² / 4。"],
+      ["再除以同一个尺度", "用方差开根号得到标准差尺度。每格都除以它，暴涨的一格仍会更大，但不会把整排数字一并拉大。", "调过尺度，下一站收到的是更容易处理的数字。", "σ = √(variance + ε)，ε = 0.00001。LayerNorm 通常再乘 γ、加 β，本课用 γ = 1、β = 0。"]
+    ]
+  },
+  {
+    title: "FFN 前馈网络",
+    source: "第 06 章的归一化矩阵 H 经过 FFN 和第二次 Add & Norm，得到 Y。",
+    steps: [
+      ["一张词卡变成八格", "每张词卡单独过同一个小网络。这一站不向邻居打听。用 W₁ 的八列，把四格变成八格。", "让一张纸条同时回答八个小问题。", "z = hW₁ + b₁，h ∈ ℝ⁴，W₁ ∈ ℝ^(4×8)，z ∈ ℝ⁸。"],
+      ["正数亮灯，负数熄灯", "点任意灯泡，能看到打分和亮灯的算式。ReLU 让正数原样通过，把小于等于零的数变成零。", "每盏灯是一个学出来的数值检测器。", "aⱼ = ReLU(zⱼ) = max(0, zⱼ)"],
+      ["用 W₂ 缩回四格", "八盏灯的结果再用 W₂ 混成四格，得到 FFN 带来的新消息。点 W₂ 任意一列能看对应乘加。", "八个小答案，收进四格的纸条。", "ffnOut = aW₂ + b₂，W₂ ∈ ℝ^(8×4)。"],
+      ["再接一次旁路", "把 FFN 的输入 h 从旁路接回来，再做一遍第 06 章的归一化。这层结束时每个词又是一行四格。", "加上这站的新消息，递给下一层或词表。", "y = LayerNorm(h + ffnOut)。第 08 章用最后一行 y 给词表打分。"]
+    ]
+  },
+  {
+    title: "Linear & Softmax",
+    source: "取第 07 章输出 Y 的最后一行，乘 W_lm 后算出下一个 token 的概率。",
+    steps: [
+      ["末尾词给词表打分", "取最后一个词的四格，对花名册里的每个候选各做一次点积。点候选词能看到它用的四个权重和四次相乘。", "拿最后一张纸条，给每张可能接上的词卡打分。", "logitⱼ = y_last · W_lm[:, j]。独立模式用独立投影表，共享模式使用第 02 章的 Eᵀ。"],
+      ["把全词表分数换成概率", "所有候选都取 e 的指数，通通加起来当分母。每个候选用自己的指数除以那个总数。", "又切了一只 100% 蛋糕，这次每份属于一个候选词。", "pⱼ = e^(logitⱼ) / Σₖ e^(logitₖ)。这里列出了词表的每一项。"],
+      ["吐一个词，让它回到入口", "开启因果遮罩后，点接龙会把当前概率最高的 token 追加到句尾。ID 和各层矩阵会随新序列更新，再用新的句尾预测。", "新出炉的词，变成下一轮的输入。", "t_new = argmaxⱼ pⱼ，tokens ← [...tokens, t_new]。贪心选词只是一种解码策略。"]
+    ]
+  }
+];
+
+const state = {
+  chapter: 0, step: 0, preset: 0, tokens: tokenize(PRESETS[0]), row: 1, causal: true,
+  positionStart: 0, initialized: false, spike: 1, tied: false, tower: 0, head: 0, showMatrices: false,
+  kind: "Q", weightColumn: 0, outColumn: 0, neuron: 0, ffnColumn: 0, candidate: 0, history: [], cross: false
+};
+let timer = null;
+let model = computePipeline(state.tokens, state.causal, state);
+const $ = id => {
+  const element = document.getElementById(id);
+  if (!element) throw new Error("缺少 DOM ID：" + id);
+  return element;
+};
+function node(tag, className = "", value) {
+  const item = document.createElement(tag);
+  item.className = className;
+  if (value !== undefined) item.textContent = value;
+  return item;
+}
+function put(parent, ...items) {
+  parent.append(...items);
+  return parent;
+}
+function label(item, value) {
+  const text = String(value);
+  if (item.textContent !== text) item.textContent = text;
+}
+function button(value, handler, className = "choice") {
+  const item = node("button", className, value);
+  item.type = "button";
+  item.addEventListener("click", handler);
+  return item;
+}
+const fmt = (value, digits = 3) => value === -Infinity ? "−∞" :
+  (Math.abs(value) < .5 * 10 ** -digits ? "0" : Number(value.toFixed(digits)).toString().replace("-", "−"));
+const percent = value => fmt(value * 100, 1) + "%";
+const vectorText = values => "[" + values.map(value => fmt(value)).join(", ") + "]";
+const terms = (a, b) => a.map((v, i) => "(" + fmt(v) + " × " + fmt(b[i]) + ")").join(" + ");
+const flags = (items, selected) => items.forEach((item, i) => item.setAttribute("aria-pressed", i === selected));
+const num = value => String(value).padStart(2, "0");
+function choiceSet(names, callback, accessibleName) {
+  const root = node("div", "choices");
+  root.setAttribute("role", "group");
+  root.setAttribute("aria-label", accessibleName);
+  const items = names.map((name, i) => button(name, () => callback(i)));
+  put(root, ...items);
+  return {root, update: selected => flags(items, selected)};
+}
+function pool(parent, create) {
+  const children = [];
+  return (list, render) => {
+    while (children.length < list.length) {
+      const child = create(children.length);
+      parent.append(child.root ?? child);
+      children.push(child);
+    }
+    children.forEach((child, i) => {
+      const root = child.root ?? child;
+      const visible = i < list.length;
+      root.hidden = !visible;
+      if (visible) render(child, list[i], i);
+    });
+  };
+}
+function phase(card, step) {
+  card.dataset.phase = step;
+  card.classList.add("step-focus");
+  return card;
+}
+function card(title, step, worked = false) {
+  const root = node("div", worked ? "worked" : "card");
+  if (title) put(root, node("h3", "", title));
+  if (step !== undefined) phase(root, step);
+  return root;
+}
+function textLine(parent, className = "math") {
+  const text = node("p", className);
+  parent.append(text);
+  return text;
+}
+function vector(size = 4) {
+  const root = node("div", "vector");
+  const cells = range(size).map(() => node("span"));
+  put(root, ...cells);
+  return {root, update(values, selected = -1) {
+    cells.forEach((cell, i) => {
+      label(cell, fmt(values[i]));
+      cell.classList.toggle("is-selected", i === selected);
+    });
+  }};
+}
+function matrix(title, width, pickColumn, {headings = [], format = fmt} = {}) {
+  const root = node("div", "matrix-box scroll-x");
+  const table = node("table", "matrix");
+  const caption = node("caption", "", title);
+  const heading = node("thead");
+  const header = node("tr");
+  const body = node("tbody");
+  const corner = node("th", "", "行");
+  corner.scope = "col";
+  header.append(corner);
+  const columnButtons = [];
+  range(width).forEach(i => {
+    const th = node("th");
+    th.scope = "col";
+    if (pickColumn) {
+      const control = button(String(i + 1), () => pickColumn(i));
+      control.setAttribute("aria-label", title + " 第 " + (i + 1) + " 列");
+      columnButtons.push(control);
+      th.append(control);
+    } else label(th, headings[i] ?? i + 1);
+    header.append(th);
+  });
+  put(heading, header);
+  put(table, caption, heading, body);
+  root.append(table);
+  const updateRows = pool(body, () => {
+    const root = node("tr");
+    const header = node("th");
+    header.scope = "row";
+    const cells = range(width).map(() => node("td"));
+    put(root, header, ...cells);
+    return {root, header, cells};
+  });
+  return {root, update(values, names = [], {col = -1, row = -1, title: newTitle} = {}) {
+    if (newTitle) label(caption, newTitle);
+    flags(columnButtons, col);
+    updateRows(values, (item, data, i) => {
+      label(item.header, names[i] ?? i + 1);
+      item.root.classList.toggle("is-selected", i === row);
+      item.cells.forEach((cell, x) => {
+        label(cell, format(data[x]));
+        cell.classList.toggle("is-selected", x === col);
+      });
+    });
+  }};
+}
+function presets(indices = range(PRESETS.length), spaced = false) {
+  const words = indices.map(i => spaced ? tokenize(PRESETS[i]).join(" ") : PRESETS[i]);
+  const options = choiceSet(words, i => setPreset(indices[i]), "预设句");
+  options.root.prepend(node("span", "choices__label", "切换本轮输入"));
+  return {root: options.root, update: () => options.update(indices.indexOf(state.preset))};
+}
+function tokenPicker(prompt) {
+  const root = node("div", "choices");
+  const title = node("span", "choices__label", prompt);
+  const entries = node("div", "term-row");
+  entries.setAttribute("role", "group");
+  entries.setAttribute("aria-label", prompt);
+  put(root, title, entries);
+  const updateEntries = pool(entries, i => button("", () => { state.row = i; render(); }, "token-button"));
+  return {root, update() {
+    updateEntries(model.tokens, (item, word, i) => {
+      label(item, word);
+      item.setAttribute("aria-label", word + "，第 " + (i + 1) + " 个词");
+      item.setAttribute("aria-pressed", i === state.row);
+    });
+  }};
+}
+
+const tokenMatrix = (name, key) => ({name, width: 4, values: data => data[key]});
+const handoffOutputs = [
+  [],
+  [{name: "Token IDs", width: 1, headings: ["ID"], values: data => data.ids.map(id => [id]),
+    preview: data => vectorText(data.ids)}],
+  [tokenMatrix("E[IDs]", "E")],
+  [tokenMatrix("X", "X")],
+  [tokenMatrix("Q", "Q"), tokenMatrix("K", "K"), tokenMatrix("V", "V")],
+  [tokenMatrix("AttnOut", "attnOut")],
+  [tokenMatrix("H", "H")],
+  [tokenMatrix("Y", "Y")],
+  [{name: "p", width: 1, headings: ["概率"], values: data => data.lm.probabilities.map(value => [value]),
+    format: percent, vocabulary: true, preview: data => "最高概率「" + VOCAB[data.winner] + "」 " + percent(data.lm.probabilities[data.winner])}]
+];
+
+function mountHandoff(root, chapter) {
+  const panel = card("");
+  panel.classList.add("handoff");
+  const charts = node("div", "handoff__flow");
+  charts.id = "handoff-" + num(chapter);
+  const heading = node("h3", "", "本章输入与输出");
+  heading.id = charts.id + "-title";
+  heading.tabIndex = -1;
+  panel.setAttribute("role", "region");
+  panel.setAttribute("aria-labelledby", heading.id);
+  const expand = button("展开完整数据", () => {
+    state.showMatrices = !state.showMatrices;
+    render();
+  }, "control");
+  expand.setAttribute("aria-controls", charts.id);
+  const final = chapter === chapters.length - 1;
+  const destination = final ? 1 : chapter + 1;
+  const next = button(final ? "带着当前序列回到第 01 章" : "送入第 " + num(destination) + " 章", () => {
+    go(destination);
+    $("handoff-" + num(destination) + "-title").focus({preventScroll: true});
+  }, "control");
+  const controls = put(node("div", "handoff__tools"), heading, put(node("div", "choices"), expand, next));
+  const picker = final ? null : tokenPicker(chapter === 5 ? "追踪行 · 选提问者" : "追踪 token 行");
+  const trace = node("div", "handoff__trace");
+  const tail = node("p", "hint");
+  trace.append(final ? tail : picker.root);
+  const spikeNote = chapter === 6 ? textLine(trace, "hint") : null;
+
+  function side(title, specs) {
+    const box = put(node("div", "handoff__side"), node("h4", "", title));
+    const data = specs.map(spec => {
+      const table = matrix(spec.name, spec.width, undefined, spec);
+      const name = node("b", "math");
+      const sample = node("p", "math");
+      box.append(put(node("div", "handoff__datum"), name, sample, table.root));
+      return {spec, name, sample, table};
+    });
+    return {box, update(names, row) {
+      data.forEach(({spec, name, sample, table}) => {
+        const values = spec.values(model);
+        const shape = spec.width === 1 ? "[" + values.length + "]" : values.length + "×" + spec.width;
+        const caption = spec.name + " · " + shape;
+        const selected = spec.vocabulary ? model.winner : row;
+        name.hidden = sample.hidden = state.showMatrices;
+        table.root.hidden = !state.showMatrices;
+        if (state.showMatrices) {
+          table.update(values, spec.vocabulary ? VOCAB : names, {row: selected, title: caption});
+        } else {
+          label(name, caption);
+          label(sample, spec.preview ? spec.preview(model) : vectorText(values[selected]));
+        }
+      });
+    }};
+  }
+
+  const input = chapter === 6
+    ? side("输入 · 第 05 章与第 03 章的旁路", [...handoffOutputs[5], ...handoffOutputs[3]])
+    : side(chapter === 1 ? "输入 · 当前原句" : "输入 · 来自第 " + num(chapter - 1) + " 章", handoffOutputs[chapter - 1]);
+  const raw = chapter === 1 ? textLine(input.box) : null;
+  const output = side(final ? "输出 · 下一 token 概率" : "输出 · 送往第 " + num(chapter + 1) + " 章", handoffOutputs[chapter]);
+  const arrow = node("span", "handoff__arrow", "→");
+  arrow.setAttribute("aria-hidden", "true");
+  put(panel, controls, trace, put(charts, input.box, arrow, output.box));
+  root.prepend(panel);
+  return {update() {
+    const row = final ? model.tokens.length - 1 : state.row;
+    const names = model.tokens.map((token, i) => (i + 1) + " · " + token);
+    if (final) label(tail, "词表投影使用 Y 的最后一行 · 第 " + (row + 1) + " 行「" + model.tokens[row] + "」");
+    else picker.update();
+    if (raw) label(raw, "「" + model.tokens.join("") + "」");
+    if (spikeNote) {
+      spikeNote.hidden = state.spike === 1;
+      label(spikeNote, "残差相加前，AttnOut 的第 1 列乘以 " + state.spike + "。");
+    }
+    expand.setAttribute("aria-expanded", state.showMatrices);
+    label(expand, state.showMatrices ? "收起完整数据" : "展开完整数据");
+    panel.toggleAttribute("data-expanded", state.showMatrices);
+    input.update(names, row);
+    output.update(names, row);
+  }};
+}
+
+function slider(id, title, min, max) {
+  const root = node("div", "slider-row");
+  const caption = node("label", "", title);
+  caption.htmlFor = id;
+  const input = node("input");
+  input.id = id;
+  input.type = "range";
+  input.min = min;
+  input.max = max;
+  const output = node("output");
+  output.setAttribute("for", id);
+  put(root, caption, input, output);
+  return {root, input, update(value, shown = value) { input.value = value; label(output, shown); }};
+}
+function svgNode(tag, attrs = {}, text) {
+  const item = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [key, value] of Object.entries(attrs)) item.setAttribute(key, value);
+  if (text !== undefined) item.textContent = text;
+  return item;
+}
+
+function architecture(single) {
+  const root = svgNode("svg", {
+    class: single ? "arch__svg arch__svg--single" : "arch__svg",
+    viewBox: single ? "0 84 360 396" : "0 0 610 480", role: "group",
+    "aria-label": single ? "从原论文 Decoder 推导的单塔教学架构" : "论文图 1 的 Transformer 双塔架构"
+  });
+  const suffix = single ? "single" : "double";
+  const defs = svgNode("defs");
+  for (const [kind, color] of [["flow", "var(--wire)"], ["bridge", "var(--green)"]]) {
+    const marker = svgNode("marker", {
+      id: kind + "-" + suffix, viewBox: "0 0 6 6", markerWidth: 6, markerHeight: 6,
+      refX: 5, refY: 3, orient: "auto", markerUnits: "userSpaceOnUse"
+    });
+    marker.append(svgNode("path", {d: "M0 0 6 3 0 6Z", fill: color}));
+    defs.append(marker);
+  }
+  const frames = svgNode("g");
+  const wires = svgNode("g");
+  const modules = svgNode("g");
+  put(root, defs, frames, wires, modules);
+  const animated = [];
+  const textAt = (x, y, value, className = "arch__eyebrow", target = frames) =>
+    target.append(svgNode("text", {x, y, class: className, "text-anchor": "middle"}, value));
+  function frame(x, top, side, name) {
+    const bottom = 366;
+    frames.append(svgNode("rect", {
+      x: x - 100 + side * 7, y: top, width: 200, height: bottom - top, rx: 10, class: "arch__frame"
+    }));
+    textAt(x, 473, name, "arch__heading");
+    textAt(x + side * 128, (top + bottom) / 2 + 4, "N×");
+  }
+  function path(d, step, kind = "wire") {
+    const marker = (kind === "bridge" ? "bridge" : "flow") + "-" + suffix;
+    const item = svgNode("path", {d, class: "arch__" + kind, "marker-end": "url(#" + marker + ")"});
+    animated.push({item, step});
+    wires.append(item);
+  }
+  function block(x, y, title, chapter, color, step, options = {}) {
+    const {width = 158, height = 24, circle = false, description = title.replaceAll("\n", " "), cross = false, causal} = options;
+    const group = svgNode("g", {
+      class: "arch__node " + color, role: "button", tabindex: "0",
+      "aria-label": description + "，打开第 " + num(chapter) + " 章"
+    });
+    const bounds = circle
+      ? svgNode("circle", {cx: x, cy: y, r: height / 2})
+      : svgNode("rect", {x: x - width / 2, y: y - height / 2, width, height, rx: 5});
+    const open = () => go(chapter, 0, {cross, causal});
+    group.addEventListener("click", open);
+    group.addEventListener("keydown", event => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat) open();
+    });
+    group.append(bounds);
+    if (title) {
+      const lines = title.split("\n");
+      lines.forEach((line, i) => textAt(x, y + 4.5 + (i - (lines.length - 1) / 2) * 14, line, "arch__label", group));
+    }
+    modules.append(group);
+    animated.push({item: group, step});
+    return {x, y, width, height, group};
+  }
+  const top = block => block.y - block.height / 2;
+  const inlet = block => block.y + block.height / 2 + 1;
+  const up = (from, to, step) => path(`M${from.x} ${top(from)}V${inlet(to)}`, step);
+  function postNorm(from, operation, y, side, step, chapter = 6) {
+    const norm = block(from.x, y, "Add & Norm", chapter, "tint", step);
+    const edge = norm.width / 2;
+    const outside = norm.x + side * (edge + 16);
+    const branchY = top(from) - 6;
+    path(`M${norm.x} ${branchY}H${outside}V${y}H${norm.x + side * (edge + 1)}`, step, "residual");
+    up(operation, norm, step);
+    return norm;
+  }
+  function input(x, name, embedding, side) {
+    const tokens = block(x, 447, name, 1, "arch__terminal", 0, {width: 175});
+    const embed = block(x, 414, embedding, 2, "lavender", 0, {height: 28});
+    const plus = block(x, 379, "+", 3, "tint", 0, {height: 22, circle: true, description: "嵌入向量加上位置编码"});
+    const position = block(x + side * 43, plus.y, "", 3, "", 0, {
+      height: 25, circle: true, description: "正弦和余弦位置编码 · Positional Encoding"
+    });
+    position.group.append(svgNode("path", {d: `M${position.x - 9} ${plus.y}q4.5 -9 9 0t9 0`, class: "arch__wave"}));
+    textAt(x + side * 104, plus.y - 3, "Positional", "arch__label", position.group);
+    textAt(x + side * 104, plus.y + 11, "Encoding", "arch__label", position.group);
+    up(tokens, embed, 0);
+    up(embed, plus, 0);
+    path(`M${position.x - side * position.height / 2} ${plus.y}H${x + side * 12}`, 0);
+    return plus;
+  }
+  function readout(source, step) {
+    const {x} = source;
+    const linear = block(x, source.y - 35, "Linear", 8, "lavender", step);
+    const soft = block(x, linear.y - 32, "Softmax", 8, "mint", step);
+    const out = block(x, soft.y - 32, "Output Probabilities", 8, "arch__terminal", step);
+    up(source, linear, step);
+    up(linear, soft, step);
+    up(soft, out, step);
+  }
+  function selfAttention(from, normY, side, step, masked) {
+    const {x} = from;
+    const attention = masked
+      ? block(x, 327, "Masked\nMulti-Head Attention", 5, "mint", step, {height: 44, causal: true})
+      : block(x, 332, "Multi-Head\nAttention", 5, "mint", step, {height: 34, causal: false, description: "Encoder 多头自注意力"});
+    const bottom = inlet(attention);
+    up(from, attention, step);
+    for (const arm of [-1, 1]) {
+      const end = x + arm * 45;
+      path(`M${x} ${bottom + 8}H${end - arm * 8}Q${end} ${bottom + 8} ${end} ${bottom}`, step);
+    }
+    return postNorm(from, attention, normY, side, step);
+  }
+  function feedForward(from, y, normY, side, step) {
+    const ffn = block(from.x, y, "Feed Forward", 7, "wheat", step, {height: 30});
+    up(from, ffn, step);
+    return postNorm(from, ffn, normY, side, step, 7);
+  }
+  if (single) {
+    const x = 173;
+    frame(x, 189, 1, "Decoder-Only · 单塔");
+    const context = input(x, "提示词 + 已生成的 token", "Token Embedding", 1);
+    const masked = selfAttention(context, 281, 1, 2, true);
+    readout(feedForward(masked, 240, 203, 1, 2), 2);
+  } else {
+    const ex = 156;
+    const dx = 444;
+    frame(ex, 186, -1, "Encoder · 编码器");
+    frame(dx, 105, 1, "Decoder · 解码器");
+    const source = input(ex, "Inputs", "Input Embedding", -1);
+    const target = input(dx, "Outputs (shifted right)", "Output Embedding", 1);
+    const encoded = feedForward(selfAttention(source, 288, -1, 1, false), 244, 200, -1, 1);
+    const masked = selfAttention(target, 281, 1, 1, true);
+    const cross = block(dx, 233, "Multi-Head\nAttention", 5, "mint", 1, {
+      height: 34, cross: true, causal: false, description: "Encoder–Decoder 多头注意力（Cross-Attention）"
+    });
+    const bottom = inlet(cross);
+    // 图 1 中左、中的输入来自 Encoder，右侧输入来自 Decoder。
+    const memoryY = bottom + 10;
+    const memoryTurn = 313;
+    const valuePort = dx - 45;
+    path(`M${ex} ${top(encoded)}V170H${memoryTurn}V${memoryY}H${valuePort - 8}Q${valuePort} ${memoryY} ${valuePort} ${bottom}`, 1, "bridge");
+    path(`M${valuePort - 8} ${memoryY}H${dx - 8}Q${dx} ${memoryY} ${dx} ${bottom}`, 1, "bridge");
+    const queryPort = dx + 45;
+    path(`M${dx} ${top(masked)}V${bottom + 12}Q${dx} ${bottom + 9} ${dx + 9} ${bottom + 9}H${queryPort - 8}Q${queryPort} ${bottom + 9} ${queryPort} ${bottom}`, 1);
+    textAt(235, 162, "Encoder → K、V", "arch__bridge-label", modules);
+    textAt(valuePort - 10, bottom + 6, "V", "arch__bridge-label", modules);
+    textAt(dx - 10, bottom + 6, "K", "arch__bridge-label", modules);
+    textAt(queryPort + 10, bottom + 13, "Q", "arch__eyebrow", modules);
+    const attended = postNorm(masked, cross, 194, 1, 1);
+    readout(feedForward(attended, 156, 119, 1, 1), 1);
+  }
+  let frameRequest;
+  return {root, update(step) {
+    cancelAnimationFrame(frameRequest);
+    frameRequest = requestAnimationFrame(() => {
+      animated.forEach(({item, step: target}) => item.classList.toggle("is-emphasis", target === step));
+    });
+  }};
+}
+function mountMap(root) {
+  const toggle = choiceSet(architectureViews.map(view => view.name), value => setStep(value + 1), "地图架构");
+  const scrollCue = node("span", "diagram-cue--scroll", " · 左右滑动看全图");
+  const cue = put(node("span", "hint diagram-cue"), "点图上的模块跳课", scrollCue);
+  const bridge = put(node("span", "arch__legend"), node("i", "legend-line"), "Encoder → K、V");
+  const residual = put(node("span", "arch__legend"), node("i", "legend-line legend-line--residual"), "残差绕路");
+  const twins = architecture(false);
+  const single = architecture(true);
+  const drawings = put(node("div", "scroll-x"), twins.root, single.root);
+  put(root, put(node("div", "lesson__tools"), toggle.root, cue), drawings,
+    put(node("div", "arch__caption"), "↑ 数据从底部往上走", bridge, residual));
+  return {update() {
+    toggle.update(state.tower);
+    twins.root.toggleAttribute("hidden", state.tower === 1);
+    single.root.toggleAttribute("hidden", state.tower === 0);
+    bridge.hidden = scrollCue.hidden = state.tower === 1;
+    (state.tower ? single : twins).update(state.step);
+  }};
+}
+function mountTokens(root) {
+  const choices = presets();
+  const cut = card("原句与切词", 1);
+  const strip = node("div", "token-strip");
+  const raw = node("span", "token-strip__raw");
+  const scissors = node("span", "scissors", "✂");
+  scissors.setAttribute("aria-hidden", "true");
+  const chopped = node("div", "term-row");
+  const updateChopped = pool(chopped, () => {
+    const root = node("span", "token-card");
+    const word = node("b");
+    const identifier = node("small");
+    put(root, word, identifier);
+    return {root, word, identifier};
+  });
+  put(strip, raw, scissors, chopped);
+  cut.append(strip);
+  const roster = card("固定花名册", 2);
+  const book = node("div", "vocab roster");
+  const entries = VOCAB.map((word, id) =>
+    put(node("span", "roster__entry"), node("span", "", word), node("span", "roster__id", id)));
+  put(book, ...entries);
+  roster.append(book);
+  const output = card("分词器的输出", 2, true);
+  const idLine = textLine(output);
+  const foot = node("p", "hint", "此时只有一维整数列表。下一章每个整数才会换成一行向量。");
+  output.append(foot);
+  put(root, put(node("div", "lesson__tools"), choices.root), put(node("div", "stack"), cut, roster, output));
+  return {update() {
+    choices.update();
+    label(raw, model.tokens.join(""));
+    strip.classList.toggle("is-cut", state.step > 0);
+    chopped.setAttribute("aria-hidden", state.step === 0);
+    updateChopped(model.tokens, (item, token, i) => {
+      label(item.word, token);
+      label(item.identifier, state.step === 2 ? "ID " + model.ids[i] : "词卡 " + (i + 1));
+    });
+    entries.forEach((item, id) => item.classList.toggle("in-example", model.ids.includes(id)));
+    label(idLine, "tokens = [" + model.tokens.join(", ") + "]  →  IDs = [" + model.ids.join(", ") + "]");
+  }};
+}
+function mountEmbedding(root) {
+  let drawer = null;
+  let lastModel;
+  let lastRow;
+  const drawers = card("词典抽屉 · 点一个 ID", 0);
+  const options = choiceSet(VOCAB.map((word, i) => i + " · " + word), id => {
+    const index = model.ids[state.row] === id ? state.row : model.ids.indexOf(id);
+    drawer = index < 0 ? id : null;
+    if (index >= 0) state.row = index;
+    setStep(1);
+  }, "词向量表抽屉");
+  options.root.classList.add("vocab");
+  drawers.append(options.root);
+  const selected = card("抽屉里的四个数", 1, true);
+  const read = textLine(selected);
+  const displayed = vector();
+  selected.append(displayed.root);
+  const stack = card("照词序摞成矩阵", 2);
+  const table = matrix("输入词向量", 4);
+  stack.append(table.root);
+  put(root, put(node("div", "stack"), drawers, selected, stack));
+  return {update() {
+    if (lastModel !== model || lastRow !== state.row) drawer = null;
+    lastModel = model;
+    lastRow = state.row;
+    const id = drawer ?? model.ids[state.row];
+    options.update(id);
+    label(read, "E[" + id + "] 对应「" + VOCAB[id] + "」 · " +
+      (model.ids.includes(id) ? "用于当前句" : "词典预览，当前句保持原词序"));
+    displayed.update(EMBEDDINGS[id]);
+    table.update(model.E, model.tokens, {row: state.row, title: "E[IDs] · " + model.tokens.length + "×4"});
+  }};
+}
+function clock(name) {
+  const root = node("div", "clock");
+  const svg = svgNode("svg", {viewBox: "0 0 100 100", role: "img", "aria-label": name});
+  const face = svgNode("circle", {cx: 50, cy: 50, r: 37, class: "clock__face"});
+  const axes = svgNode("path", {d: "M13 50H87M50 13V87", class: "clock__axis"});
+  const hand = svgNode("g", {class: "clock__hand"});
+  put(hand, svgNode("line", {x1: 50, y1: 50, x2: 82, y2: 50}), svgNode("circle", {cx: 50, cy: 50, r: 3}));
+  put(svg, face, axes, svgNode("text", {x: 81, y: 45, class: "clock__axis-label"}, "cos"),
+    svgNode("text", {x: 53, y: 14, class: "clock__axis-label"}, "sin"), hand);
+  const values = node("span", "math");
+  put(root, node("b", "hint", name), svg, values);
+  let frameRequest;
+  return {root, update(angle, pair) {
+    label(values, "sin " + fmt(pair[0]) + " · cos " + fmt(pair[1]));
+    cancelAnimationFrame(frameRequest);
+    frameRequest = requestAnimationFrame(() => { hand.style.transform = "rotate(" + (-angle * 180 / Math.PI) + "deg)"; });
+  }};
+}
+function mountPosition(root) {
+  const choices = presets([0, 1]);
+  const examples = PRESETS.slice(0, 2);
+  const dogOffsets = examples.map(text => tokenize(text).indexOf("狗"));
+  const position = slider("pos-slider", "首词 pos", 0, 20);
+  position.input.addEventListener("input", () => { state.positionStart = +position.input.value; modelChanged(); });
+  const comparison = card("对照示例 · 同一个「狗」的两种站位", 0);
+  const contrastLine = textLine(comparison);
+  const contrastTable = matrix("「狗」加完位置章的 X", 4);
+  comparison.append(contrastTable.root);
+  const motion = card("快钟 / 慢钟 · 首词的位置印章", 1);
+  const fast = clock("快钟 · pos 弧度");
+  const slow = clock("慢钟 · pos / 100 弧度");
+  motion.append(put(node("div", "clocks"), fast.root, slow.root));
+  const stamp = card("同格相加 · E[IDs] + PE = X", 2);
+  const tables = [matrix("E[IDs] · 词向量", 4), matrix("PE · 位置编码", 4), matrix("X · 加法结果", 4)];
+  const cellMath = node("p", "math");
+  tables[1].root.classList.add("stamp");
+  put(stamp, put(node("div", "three-up"), ...tables.map(table => table.root)), cellMath);
+  const tools = put(node("div", "lesson__tools"), choices.root, position.root);
+  put(root, tools, put(node("div", "stack"), comparison, motion, stamp));
+  return {update() {
+    choices.update();
+    position.update(state.positionStart);
+    const dog = EMBEDDINGS[vocabIds.get("狗")];
+    const positions = dogOffsets.map(offset => state.positionStart + offset);
+    label(contrastLine, "词向量 " + vectorText(dog) + " · pos = " + positions.join(" / "));
+    contrastTable.update(positions.map(pos => add(dog, PE(pos))), examples, {row: state.preset < examples.length ? state.preset : -1});
+    fast.update(model.positions[0], model.P[0].slice(0, 2));
+    slow.update(model.positions[0] / 100, model.P[0].slice(2));
+    const names = model.tokens.map((word, i) => word + " @" + model.positions[i]);
+    const row = state.row;
+    tables[0].update(model.E, names, {row});
+    tables[1].update(model.P, names, {row});
+    tables[2].update(model.X, names, {row});
+    label(cellMath, "第 " + (row + 1) + " 行逐格相加 · " + model.X[row].map((value, i) =>
+      fmt(model.E[row][i]) + " + (" + fmt(model.P[row][i]) + ") ≈ " + fmt(value)).join("  ｜  "));
+  }};
+}
+
+function mountProjections(root) {
+  const training = choiceSet(["训练前 · 随机", "训练后 · 定型"], i => {
+    state.initialized = i === 0;
+    state.step = 2;
+    modelChanged();
+  }, "权重训练快照");
+  const input = card("输入卡 X 与三张新卡", 0);
+  const incoming = textLine(input);
+  const triplet = ["Q", "K", "V"].map(kind => {
+    const wrap = node("div");
+    const values = vector();
+    put(wrap, node("b", "hint", kind), values.root);
+    return {wrap, values};
+  });
+  input.append(put(node("div", "three-up"), ...triplet.map(item => item.wrap)));
+  const weights = card("三张完整的 4×4 权重表 · 点列号", 1);
+  const tables = ["Q", "K", "V"].map(kind => matrix("W_" + kind, 4, col => {
+    state.kind = kind;
+    state.weightColumn = col;
+    setStep(1, {reveal: false});
+  }));
+  const drill = card("四项相乘，再加起来", 1, true);
+  const formula = textLine(drill);
+  weights.append(put(node("div", "three-up"), ...tables.map(table => table.root)));
+  const trick = card("权重快照", 2);
+  const snapshot = textLine(trick, "hint");
+  put(root, put(node("div", "lesson__tools"), training.root),
+    put(node("div", "stack"), input, weights, drill, trick));
+  return {update() {
+    training.update(state.initialized ? 0 : 1);
+    const i = state.row;
+    const col = state.weightColumn;
+    label(incoming, "X[" + i + "]「" + model.tokens[i] + "」= " + vectorText(model.X[i]));
+    ["Q", "K", "V"].forEach((kind, j) => {
+      const selected = kind === state.kind ? col : -1;
+      triplet[j].values.update(model[kind][i], selected);
+      tables[j].update(model.weights[kind], [], {col: selected});
+    });
+    const kind = state.kind;
+    label(formula, kind + "[" + i + ", " + col + "] = " +
+      terms(model.X[i], column(model.weights[kind], col)) + " ≈ " + fmt(model[kind][i][col]));
+    label(snapshot, state.initialized
+      ? "随机档 · 三张表由同一个固定种子生成。点不同词，表上的小数保持原样。"
+      : "定型档 · 这里用手设数值模拟训练快照。训练靠猜词误差逐步调整权重，推理直接使用固定权重。");
+  }};
+}
+function attentionGraph() {
+  const root = node("div", "scroll-x");
+  const svg = svgNode("svg", {class: "attn-graph", role: "img"});
+  const connections = svgNode("g");
+  const question = svgNode("g");
+  const title = svgNode("text", {x: 0, y: 15});
+  put(question, svgNode("rect", {x: -51, y: 2, width: 102, height: 26, rx: 5}), title);
+  put(svg, connections, question);
+  root.append(svg);
+  const labels = pool(connections, () => {
+    const root = svgNode("g");
+    const wire = svgNode("path", {opacity: 0});
+    const tag = svgNode("g");
+    const word = svgNode("text", {x: 0, y: 93});
+    put(tag, svgNode("rect", {x: -30, y: 81, width: 60, height: 24, rx: 5}), word);
+    put(root, wire, tag);
+    return {root, wire, tag, word};
+  });
+  let frameRequest;
+  return {root, update(tokens, row, weights, masked) {
+    const width = Math.max(400, tokens.length * 72);
+    const center = width / 2;
+    svg.setAttribute("viewBox", "0 0 " + width + " 111");
+    svg.style.minWidth = tokens.length > 6 ? width + "px" : "";
+    svg.setAttribute("aria-label", "注意力连线，线越粗权重越高");
+    question.setAttribute("transform", "translate(" + center + " 0)");
+    label(title, "Q · " + tokens[row]);
+    const animate = [];
+    labels(tokens, ({wire, tag, word}, token, i) => {
+      const target = (i + .5) * width / tokens.length;
+      label(word, token);
+      tag.setAttribute("transform", "translate(" + target + " 0)");
+      wire.setAttribute("d", "M" + center + " 28C" + center + " 57 " + target + " 49 " + target + " 81");
+      const covered = masked[i] === -Infinity;
+      tag.classList.toggle("is-masked", covered);
+      animate.push(() => {
+        wire.classList.toggle("is-masked", covered);
+        wire.style.opacity = covered ? .32 : .82;
+        wire.style.strokeWidth = (covered ? 1 : 1 + 10 * weights[i]) + "px";
+      });
+    });
+    cancelAnimationFrame(frameRequest);
+    frameRequest = requestAnimationFrame(() => animate.forEach(apply => apply()));
+  }};
+}
+function mountAttention(root) {
+  const phrases = presets(range(PRESETS.length), true);
+  const visibility = choiceSet(["🔓 全可见", "🔒 因果遮罩"], i => { state.causal = Boolean(i); modelChanged(); }, "注意力可见性");
+  const which = choiceSet(["头 1 · 第 1–2 维", "头 2 · 第 3–4 维"], i => { state.head = i; render(); }, "注意力头");
+  const crossNote = node("p", "worked hint", "从地图的 Cross-Attention 来？点积步骤相同。双塔的 Q 来自 Decoder，K/V 来自 Encoder；下面用同一句话里的 Q/K/V 演示 Self-Attention。");
+  const split = card("拆头 · 每个头拿走连续两格", 0);
+  const qkv = textLine(split);
+  const graph = attentionGraph();
+  split.append(graph.root);
+  const scores = card("Q · K ÷ √2 · 从相似度到遮罩分数", 1);
+  const scoreList = node("div", "stack");
+  const scoreLines = pool(scoreList, () => node("p", "math"));
+  scores.append(scoreList);
+  const cake = card("Softmax · 把 100% 分给这一排词", 2);
+  const sliced = node("div", "cake");
+  sliced.setAttribute("aria-hidden", "true");
+  const cakeSlices = pool(sliced, () => node("span"));
+  const parts = node("div", "term-row cake-labels");
+  const partLabels = pool(parts, () => node("span", "token-card"));
+  const expLine = textLine(cake);
+  put(cake, sliced, parts);
+  const out = card("本头的 V · 用份额加权求和", 3);
+  const vTable = matrix("本头 V", 2);
+  const outLine = textLine(out);
+  put(out, vTable.root, outLine);
+  const joined = card("拼头，再经 W_O 混回 4 维", 3, true);
+  const concat = textLine(joined);
+  const wo = matrix("W_O · 4×4", 4, i => { state.outColumn = i; render(); });
+  const projected = textLine(joined);
+  const result = vector();
+  put(joined, wo.root, projected, result.root);
+  put(root, put(node("div", "lesson__tools"), phrases.root, visibility.root, which.root),
+    put(node("div", "stack"), crossNote, split, scores, cake, out, joined));
+  return {update() {
+    crossNote.hidden = !state.cross;
+    phrases.update();
+    visibility.update(+state.causal);
+    which.update(state.head);
+    const i = state.row, h = state.head;
+    const head = model.heads[h];
+    const row = head.rows[i];
+    label(qkv, "「" + model.tokens[i] + "」的 Q" + (h + 1) + " = " + vectorText(head.q[i]) +
+      " · K / V 也取同两维");
+    graph.update(model.tokens, i, row.probabilities, row.masked);
+    scoreLines(model.tokens, (line, token, j) => {
+      const suffix = row.masked[j] === -Infinity ? " → −∞（未来词，e^(−∞) = 0）" : "";
+      label(line, token + " 的 K " + vectorText(head.k[j]) + " · (" + terms(head.q[i], head.k[j]) + ") / √2 ≈ " +
+        fmt(row.scores[j]) + suffix);
+    });
+    label(expLine, "Σ e^分数 = " + row.exps.map(value => fmt(value)).join(" + ") + " ≈ " + fmt(row.total));
+    cakeSlices(row.probabilities, (slice, share) => slice.style.setProperty("--portion", share * 100 + "%"));
+    partLabels(row.probabilities, (item, share, j) => {
+      label(item, model.tokens[j] + " " + fmt(row.exps[j]) + " ÷ " + fmt(row.total) + " ≈ " + percent(share));
+    });
+    vTable.update(head.v, model.tokens, {title: "V" + (h + 1) + " · " + model.tokens.length + "×2"});
+    label(outLine, "O" + (h + 1) + " = " + head.v.map((values, j) => fmt(row.probabilities[j]) + " × " +
+      vectorText(values)).join(" + ") + " ≈ " + vectorText(row.out));
+    label(concat, "[O₁ | O₂] = [" + model.heads.map(item => vectorText(item.rows[i].out)).join(" | ") +
+      "] → " + vectorText(model.concat[i]));
+    const col = state.outColumn;
+    wo.update(WO, [], {col});
+    label(projected, "AttnOut 第 " + (col + 1) + " 格 = " + terms(model.concat[i], column(WO, col)) +
+      " ≈ " + fmt(model.attnOut[i][col]));
+    result.update(model.attnOut[i], col);
+  }};
+}
+
+function normLines(result) {
+  return [
+    "μ = (" + result.input.map(v => fmt(v)).join(" + ") + ") / 4 ≈ " + fmt(result.mean),
+    "v − μ = " + result.input.map(value => "(" + fmt(value) + " − " + fmt(result.mean) + ")").join(", ") +
+      " ≈ " + vectorText(result.centered),
+    "σ = √((" + result.centered.map(value => "(" + fmt(value) + ")²").join(" + ") +
+      ") / 4 + " + EPSILON + ") ≈ " + fmt(result.sigma),
+    "输出 = " + vectorText(result.centered) + " / " + fmt(result.sigma) + " ≈ " + vectorText(result.out)
+  ];
+}
+function bars() {
+  const root = node("div", "bars");
+  root.setAttribute("aria-hidden", "true");
+  const rows = range(4).map(i => {
+    const value = node("span");
+    const fill = node("i");
+    put(root, put(node("div", "bar"), node("span", "", i + 1), value, fill));
+    return {value, fill};
+  });
+  return {root, update(values, limit) {
+    rows.forEach(({value, fill}, i) => {
+      label(value, fmt(values[i], 2));
+      fill.style.setProperty("--amount", Math.min(Math.abs(values[i]) / limit, 1) * 100 + "%");
+      fill.classList.toggle("is-negative", values[i] < 0);
+    });
+  }};
+}
+function mountNorm(root) {
+  const spike = slider("spike-slider", "主路第 1 格倍率", 1, 35);
+  spike.input.addEventListener("input", () => { state.spike = +spike.input.value; modelChanged(); });
+  const merge = card("相加 · 原来的 X 从旁路回来", 0);
+  const bypass = textLine(merge);
+  const main = textLine(merge);
+  const effective = textLine(merge);
+  const joined = textLine(merge);
+  const mean = card("求平均 · μ", 1);
+  const average = textLine(mean);
+  const center = card("四个格子减掉同一个 μ", 2);
+  const centered = textLine(center);
+  const scale = card("按统一的尺度相除", 3, true);
+  const sigma = textLine(scale);
+  const divided = textLine(scale);
+  const before = card("相加后 · v");
+  const after = card("归一化后 · 送给 FFN");
+  const beforeBars = bars();
+  const afterBars = bars();
+  before.append(beforeBars.root);
+  after.append(afterBars.root);
+  const comparisons = put(node("div", "two-up"), before, after);
+  put(root, put(node("div", "lesson__tools"), spike.root),
+    put(node("div", "stack"), merge, comparisons, mean, center, scale));
+  return {update() {
+    spike.update(state.spike, state.spike + "×");
+    const i = state.row;
+    const result = model.norm1[i];
+    label(bypass, "旁路 X = " + vectorText(model.X[i]));
+    label(main, "主路原 AttnOut = " + vectorText(model.attnOut[i]));
+    effective.hidden = state.spike === 1;
+    label(effective, "滑块扰动：AttnOut[1] × " + state.spike + " → 主路入场值 " + vectorText(model.branch[i]));
+    label(joined, "v = " + vectorText(model.X[i]) + " + " + vectorText(model.branch[i]) + " ≈ " + vectorText(result.input));
+    const formulas = normLines(result);
+    [average, centered, sigma, divided].forEach((line, n) => label(line, formulas[n]));
+    const max = Math.max(2, ...result.input.map(Math.abs), ...result.out.map(Math.abs));
+    beforeBars.update(result.input, max);
+    afterBars.update(result.out, max);
+  }};
+}
+function bulb(i, select) {
+  const root = button("", () => select(i), "choice bulb");
+  const svg = svgNode("svg", {viewBox: "0 0 24 25", "aria-hidden": "true"});
+  put(svg,
+    svgNode("path", {d: "M7.8 16.4c0-2.9-2.3-3.1-2.3-6.8a6.5 6.5 0 0 1 13 0c0 3.7-2.3 3.9-2.3 6.8Z", "stroke-width": 1.4, "stroke-linejoin": "round"}),
+    svgNode("path", {d: "M8.9 19.2h6.2m-5.1 2.4h4", "stroke-width": 1.5, "stroke-linecap": "round"}));
+  const index = node("small", "", i + 1);
+  const value = node("small");
+  put(root, index, svg, value);
+  return {root, value};
+}
+function formulaDetails(title, count) {
+  const root = node("details");
+  const group = node("div", "math");
+  const lines = range(count).map(() => node("p"));
+  put(group, ...lines);
+  put(root, node("summary", "", title), group);
+  return {root, update(formulas) {
+    lines.forEach((line, i) => label(line, formulas[i]));
+  }};
+}
+function mountFfn(root) {
+  const up = card("W₁ · 从 4 格扩到 8 格", 0);
+  const incoming = textLine(up);
+  const selectNeuron = i => { state.neuron = i; setStep(1, {reveal: false}); };
+  const w1 = matrix("W₁ · 4×8", 8, selectNeuron);
+  const bias1 = node("p", "math", "b₁ = " + vectorText(B1));
+  const pre = node("p", "math");
+  const allUp = formulaDetails("展开 W₁ 的 8 列乘加", 8);
+  put(up, w1.root, bias1, pre, allUp.root);
+  const gates = card("8 盏 ReLU 灯 · 点一盏看算式", 1);
+  const bulbs = range(8).map(i => bulb(i, selectNeuron));
+  const on = node("p", "math");
+  const activation = node("p", "math");
+  put(gates, put(node("div", "bulbs"), ...bulbs.map(item => item.root)), on, activation);
+  const down = card("W₂ · 缩回 4 格", 2);
+  const w2 = matrix("W₂ · 8×4", 4, i => { state.ffnColumn = i; setStep(2, {reveal: false}); });
+  const bias2 = node("p", "math", "b₂ = " + vectorText(B2));
+  const downFormula = node("p", "math");
+  const ffn = node("p", "math");
+  const allDown = formulaDetails("展开 W₂ 的 4 列乘加", 4);
+  put(down, w2.root, bias2, downFormula, ffn, allDown.root);
+  const second = card("第二次 Add & Norm", 3, true);
+  const added = textLine(second);
+  const formulas = range(4).map(() => textLine(second));
+  put(root, put(node("div", "stack"), up, gates, down, second));
+  return {update() {
+    const i = state.row, j = state.neuron;
+    const col = state.ffnColumn;
+    const h = model.H[i];
+    const z = model.hidden[i];
+    const a = model.relu[i];
+    const result = model.norm2[i];
+    const upFormulas = range(8).map(k => "z" + (k + 1) + " = " + terms(h, column(W1, k)) + " + (" +
+      fmt(B1[k]) + ") ≈ " + fmt(z[k]));
+    const downFormulas = range(4).map(k => "ffnOut 第 " + (k + 1) + " 格 = " + terms(a, column(W2, k)) +
+      " + (" + fmt(B2[k]) + ") ≈ " + fmt(model.ffnOut[i][k]));
+    label(incoming, "h · 矩阵 H 的第 " + (i + 1) + " 行 = " + vectorText(h));
+    w1.update(W1, [], {col: j});
+    label(pre, "z = " + vectorText(z));
+    allUp.update(upFormulas);
+    bulbs.forEach(({root, value}, k) => {
+      const lit = z[k] > 0;
+      root.classList.toggle("is-on", lit);
+      root.setAttribute("aria-pressed", k === j);
+      root.setAttribute("aria-label", "第 " + (k + 1) + " 盏灯，" + (lit ? "亮" : "灭") + "，输出 " + fmt(a[k]));
+      label(value, fmt(a[k], 2));
+    });
+    label(on, upFormulas[j] + "；ReLU(" + fmt(z[j]) + ") = max(0, " + fmt(z[j]) + ") ≈ " + fmt(a[j]));
+    label(activation, "a = " + vectorText(a));
+    w2.update(W2, [], {col});
+    label(downFormula, downFormulas[col]);
+    label(ffn, "ffnOut = " + vectorText(model.ffnOut[i]) + " · 送进第二次 Add & Norm");
+    allDown.update(downFormulas);
+    label(added, "v = h + ffnOut = " + vectorText(h) + " + " + vectorText(model.ffnOut[i]) + " ≈ " + vectorText(result.input));
+    normLines(result).forEach((line, k) => label(formulas[k], line));
+  }};
+}
+function mountReadout(root) {
+  const tie = choiceSet(["独立 W_lm", "与词向量表共享"], i => { state.tied = Boolean(i); modelChanged(); }, "词表投影参数");
+  const generate = button("吐出下一词并接龙", () => {
+    if (!state.causal) {
+      state.causal = true;
+      modelChanged();
+      return;
+    }
+    const word = VOCAB[model.winner];
+    state.history.push({word, probability: model.lm.probabilities[model.winner]});
+    state.tokens = [...state.tokens, word];
+    state.row = state.tokens.length - 1;
+    state.step = 2;
+    modelChanged();
+    revealPhase();
+  }, "control control--primary");
+  const reset = button("清除接龙", () => setPreset(state.preset), "control");
+  const input = card("末尾词 · 对整个词表逐一打分", 0);
+  const last = textLine(input);
+  const weight = textLine(input);
+  const dotProduct = textLine(input);
+  const probability = card("全词表 · 指数、总和与除法", 1);
+  const denominator = textLine(probability);
+  const table = node("table", "matrix lm-table");
+  const header = node("tr");
+  for (const value of ["候选词", "W_lm 的四维列", "分数 x", "e^x / 指数总和", "概率"]) {
+    const th = node("th", "", value);
+    th.scope = "col";
+    header.append(th);
+  }
+  const body = node("tbody");
+  put(table, put(node("thead"), header), body);
+  const candidates = VOCAB.map((word, id) => {
+    const pick = button(word, () => { state.candidate = id; setStep(0, {reveal: false}); });
+    const term = put(node("th"), pick);
+    term.scope = "row";
+    const weights = node("td"), score = node("td"), exp = node("td");
+    const fill = node("i");
+    const track = put(node("span", "prob-track"), fill);
+    track.setAttribute("aria-hidden", "true");
+    const percentLabel = node("span");
+    const distribution = put(node("td"), percentLabel, track);
+    put(body, put(node("tr"), term, weights, score, exp, distribution));
+    return {pick, weights, score, exp, percentLabel, fill};
+  });
+  probability.append(put(node("div", "scroll-x"), table));
+  const output = card("自回归接龙 · 新词回到入口", 2, true);
+  const sequence = textLine(output);
+  const prediction = textLine(output);
+  const history = textLine(output);
+  history.setAttribute("aria-live", "polite");
+  put(root, put(node("div", "lesson__tools"), tie.root, put(node("div", "choices"), generate, reset)),
+    put(node("div", "stack"), input, probability, output));
+  return {update() {
+    tie.update(+state.tied);
+    label(generate, state.causal ? "吐出下一词并接龙" : "切回因果遮罩");
+    reset.disabled = state.history.length === 0;
+    const chosen = state.candidate;
+    label(last, "Y 的最后一行「" + model.tokens.at(-1) + "」 · y = " + vectorText(model.last));
+    label(weight, (state.tied ? "W_lm = Eᵀ，共享第 02 章的词向量表" : "W_lm 使用独立参数表") +
+      " ·「" + VOCAB[chosen] + "」这一列 = " + vectorText(model.lmRows[chosen]));
+    label(dotProduct, "logit(「" + VOCAB[chosen] + "」) = " + terms(model.last, model.lmRows[chosen]) + " ≈ " + fmt(model.logits[chosen]));
+    label(denominator, "Σ e^x = " + model.lm.exps.map(value => fmt(value)).join(" + ") +
+      " ≈ " + fmt(model.lm.total) + " · Σ p = " + percent(sum(model.lm.probabilities)));
+    candidates.forEach((item, id) => {
+      item.pick.setAttribute("aria-pressed", id === chosen);
+      label(item.weights, vectorText(model.lmRows[id]));
+      label(item.score, fmt(model.logits[id]));
+      label(item.exp, fmt(model.lm.exps[id]) + " / " + fmt(model.lm.total));
+      label(item.percentLabel, percent(model.lm.probabilities[id]));
+      item.percentLabel.classList.toggle("candidate--winner", id === model.winner);
+      item.fill.style.setProperty("--portion", model.lm.probabilities[id] * 100 + "%");
+    });
+    label(sequence, "输入「" + model.tokens.join(" · ") + "」 · " + model.tokens.length + " 个 token");
+    label(prediction, "本轮最高概率：「" + VOCAB[model.winner] + "」 " + percent(model.lm.probabilities[model.winner]));
+    label(history, state.history.length
+      ? "已追加 " + state.history.map(({word, probability}) => "「" + word + "」 " + percent(probability)).join(" → ")
+      : "每点一次就将概率最高的词追加到原句。");
+  }};
+}
+
+const canvas = $("stage-canvas");
+const chapterList = $("chapter-list");
+const progress = $("chapter-progress");
+const noteHolder = $("notes-pages");
+const mounts = [mountMap, mountTokens, mountEmbedding, mountPosition, mountProjections, mountAttention, mountNorm, mountFfn, mountReadout];
+const pages = chapters.map((chapter, i) => {
+  const link = button("", () => go(i), "rail__link");
+  put(link, node("span", "rail__number", num(i)), node("span", "", chapter.title));
+  chapterList.append(put(node("li"), link));
+  const mark = node("span");
+  progress.append(mark);
+  const root = node("div", "lesson");
+  root.hidden = true;
+  canvas.append(root);
+  const lesson = mounts[i](root);
+  const handoff = i > 0 ? mountHandoff(root, i) : null;
+  const notes = node("div");
+  notes.hidden = true;
+  noteHolder.append(notes);
+  const itinerary = node("div", "aside__steps");
+  itinerary.setAttribute("aria-label", "本章步骤");
+  put(notes, itinerary);
+  const steps = chapter.steps.map(([title, explanation, example, math], index) => {
+    const shortcut = button("", () => setStep(index), "choice");
+    put(shortcut, node("span", "step-no", num(index + 1)), node("span", "", title));
+    itinerary.append(shortcut);
+    const article = node("div", "note-page");
+    const formula = node("div", "math");
+    math.split("\n").forEach(line => formula.append(node("p", "", line)));
+    put(article, node("h3", "", title), node("p", "", explanation), node("blockquote", "", example),
+      put(node("details"), node("summary", "", "展开数学公式"), formula));
+    notes.append(article);
+    return {shortcut, article};
+  });
+  return {root, link, mark, lesson, handoff, notes, steps};
+});
+
+function render() {
+  const chapter = chapters[state.chapter];
+  const lastStep = chapter.steps.length - 1;
+  const view = state.chapter === 0 ? architectureViews[state.tower] : null;
+  label($("stage-index"), num(state.chapter));
+  label($("stage-title"), chapter.title);
+  label($("stage-source-label"), view ? "架构来源" : "数值来源");
+  label($("stage-source"), view?.source ?? chapter.source);
+  $("architecture-reference").hidden = !view;
+  label($("rail-count"), num(state.chapter) + " / 08");
+  label($("notes-count"), num(state.step + 1) + " / " + num(chapter.steps.length));
+  label($("hud-phase"), "步骤 " + (state.step + 1) + " / " + chapter.steps.length);
+  const context = view?.context ??
+    (model.tokens.slice(0, 4).join(" · ") + (model.tokens.length > 4 ? " … " + model.tokens.length + " 词" : ""));
+  label($("hud-context"), context);
+  $("previous").disabled = state.chapter === 0 && state.step === 0;
+  $("next").disabled = state.chapter === chapters.length - 1 && state.step === lastStep;
+  $("play").setAttribute("aria-pressed", timer !== null);
+  label($("play"), timer === null ? "▶ 自动演示" : "Ⅱ 暂停演示");
+  pages.forEach((page, i) => {
+    const active = i === state.chapter;
+    page.root.hidden = page.notes.hidden = !active;
+    if (active) page.link.setAttribute("aria-current", "step");
+    else page.link.removeAttribute("aria-current");
+    page.mark.classList.toggle("is-past", i <= state.chapter);
+  });
+  const page = pages[state.chapter];
+  page.steps.forEach(({shortcut, article}, i) => {
+    shortcut.setAttribute("aria-pressed", i === state.step);
+    article.hidden = i !== state.step;
+  });
+  page.lesson.update();
+  page.handoff?.update();
+  page.root.querySelectorAll("[data-phase]").forEach(item =>
+    item.classList.toggle("is-current", +item.dataset.phase === state.step));
+}
+function modelChanged() {
+  model = computePipeline(state.tokens, state.causal, state);
+  render();
+}
+function setPreset(preset) {
+  state.preset = preset;
+  state.tokens = tokenize(PRESETS[preset]);
+  state.row = Math.min(state.row, state.tokens.length - 1);
+  state.history = [];
+  modelChanged();
+}
+function pause() {
+  clearInterval(timer);
+  timer = null;
+}
+let revealRequest;
+function go(chapter, step = 0, {cross = false, autoplay = false, causal = state.causal} = {}) {
+  if (chapter < 0 || chapter >= chapters.length) return;
+  if (!autoplay) pause();
+  cancelAnimationFrame(revealRequest);
+  state.chapter = chapter;
+  state.step = step;
+  state.cross = cross;
+  if (chapter === 0 && step > 0) state.tower = step - 1;
+  if (causal === state.causal) render();
+  else {
+    state.causal = causal;
+    modelChanged();
+  }
+  canvas.scrollTop = 0;
+  if (step > 0) revealPhase();
+}
+function revealPhase() {
+  cancelAnimationFrame(revealRequest);
+  revealRequest = requestAnimationFrame(() => {
+    const card = pages[state.chapter].root.querySelector('[data-phase="' + state.step + '"]');
+    if (!card) return;
+    const stage = canvas.getBoundingClientRect();
+    const target = card.getBoundingClientRect();
+    if (target.top < stage.top + 5 || target.bottom > stage.bottom - 4) {
+      const behavior = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+      canvas.scrollTo({top: canvas.scrollTop + target.top - stage.top - 11, behavior});
+    }
+  });
+}
+function setStep(step, {reveal = true} = {}) {
+  state.step = step;
+  if (state.chapter === 0 && step > 0) state.tower = step - 1;
+  render();
+  if (reveal) revealPhase();
+}
+function advance(direction, autoplay = false) {
+  if (!autoplay) pause();
+  const next = state.step + direction;
+  if (next >= 0 && next < chapters[state.chapter].steps.length) {
+    setStep(next);
+    return;
+  }
+  const chapter = state.chapter + direction;
+  if (chapter >= 0 && chapter < chapters.length) {
+    go(chapter, direction > 0 ? 0 : chapters[chapter].steps.length - 1, {autoplay});
+  } else {
+    pause();
+    render();
+  }
+}
+function togglePlay() {
+  if (timer !== null) {
+    pause();
+    render();
+    return;
+  }
+  if ($("next").disabled) go(state.chapter);
+  timer = setInterval(() => advance(1, true), 3000);
+  render();
+}
+$("previous").addEventListener("click", () => advance(-1));
+$("next").addEventListener("click", () => advance(1));
+$("play").addEventListener("click", togglePlay);
+document.addEventListener("keydown", event => {
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  const target = event.target;
+  if (target instanceof Element && target.closest("input, select, textarea, [contenteditable]")) return;
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    event.preventDefault();
+    go(state.chapter + (event.key === "ArrowLeft" ? -1 : 1));
+  }
+  if (event.code === "Space" || event.key === " ") {
+    if (target instanceof Element && target.closest("button, [role='button'], summary, a[href]")) return;
+    event.preventDefault();
+    if (!event.repeat) togglePlay();
+  }
+});
+const themeButton = $("theme");
+function setTheme(night) {
+  document.documentElement.dataset.theme = night ? "night" : "day";
+  themeButton.setAttribute("aria-pressed", night);
+  themeButton.setAttribute("aria-label", night ? "切换日间主题" : "切换夜间主题");
+  label(themeButton, night ? "☀ 日间" : "☾ 夜间");
+  try { localStorage.setItem("transformer-notebook-theme", night ? "night" : "day"); } catch {}
+}
+let theme = "day";
+try { theme = localStorage.getItem("transformer-notebook-theme") ?? "day"; } catch {}
+setTheme(theme === "night");
+themeButton.addEventListener("click", () => setTheme(document.documentElement.dataset.theme !== "night"));
+render();
+</script>
+</body>
+</html>
