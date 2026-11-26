@@ -79,10 +79,12 @@ svg { display: block; }
 small { font-size: .82rem; }
 .wrap { width: min(1456px, calc(100% - 80px)); margin-inline: auto; }
 .masthead { border-bottom: 1px solid var(--border); }
-.masthead__inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 66px; }
+.masthead__inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 66px; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 750; letter-spacing: .045em; font-size: .91rem; }
 .brand__mark { color: var(--accent); background: var(--tint); border: 1px solid var(--border); border-radius: 8px; padding: 6px; }
 .theme-button { white-space: nowrap; }
+.masthead__tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
+.masthead__tools a.control { text-decoration: none; }
 .control, .choice, .token-button {
   display: inline-flex;
   align-items: center;
@@ -393,7 +395,11 @@ input[type="range"] { accent-color: var(--accent); min-height: 26px; max-width: 
       </svg>
       模型学习手账
     </div>
-    <button class="control theme-button" id="theme" type="button"></button>
+    <!-- 回到站点目录。新增笔记只改 pages.js；多于一篇时 site-nav.js 会在此插入「切换笔记」。 -->
+    <nav class="masthead__tools" id="study-nav" aria-label="笔记切换">
+      <a class="control" href="index.html">首页</a>
+      <button class="control theme-button" id="theme" type="button"></button>
+    </nav>
   </div>
 </header>
 <main class="wrap">
@@ -1804,5 +1810,7 @@ setTheme(theme === "night");
 themeButton.addEventListener("click", () => setTheme(document.documentElement.dataset.theme !== "night"));
 render();
 </script>
+<script src="pages.js"></script>
+<script src="site-nav.js"></script>
 </body>
 </html>
