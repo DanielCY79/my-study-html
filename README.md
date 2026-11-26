@@ -7,7 +7,7 @@
 ## 现有笔记
 
 - [Transformer 拆解手账](transformer.html)：用九章互动实验拆开 Transformer，从分词一路算到下一个 token。
-- [T3 Code 与 Orca：底层有何不同](t3-orca-diff.html)：T3 Code 和 Orca 都在 Codex、Claude Code、Pi、OpenCode 之上加了一层编排层。目标一样：让多个 Agent 能委派任务、互相通信、交接上下文，并在出错后恢复。差别在于路线：T3 Code 抓统一协议、事件和会话交接，Orca 抓任务依赖、派工隔离和收件箱通信。这一页是自带导航的 Archify 图解，四张图都嵌在同一页里。旧地址 `t3code-orca.html`、`t3code-orchestration.html`、`orca-orchestration.html`、`t3code-orca-compare.html` 会跳到这一页。
+- [T3 Code 与 Orca：底层有何不同](t3-orca-diff.html)：T3 Code 和 Orca 都在编码 Agent 之上加了一层编排层，目标相同，路线不同。T3 Code 走 MCP 委派、事件流和会话交接；Orca 走 CLI、收件箱和任务派工。两者都用 Git Worktree 隔离并行任务。这一页是自带导航的 Archify 图解，两张图和一张对照表在同一页。旧地址 `t3code-orca.html`、`t3code-orchestration.html`、`orca-orchestration.html`、`t3code-orca-compare.html` 会跳到这一页。
 
 ## 新增一篇笔记
 
