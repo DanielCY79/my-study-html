@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="day">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Orca 把重心放在任务调度和 Agent 之间的通信：用一套 CLI 让 Agent 自己发起调度，用 Mailbox 传递结构化消息，再用 Task 和 Dispatch 的分离挡住过期完成信号。">
+<title>Orca：CLI 协议，加上收件箱</title>
+<link rel="prev" href="t3code-orchestration.html">
+<link rel="next" href="t3code-orca-compare.html">
+<script>
+(function () {
+  try {
+    if (localStorage.getItem("transformer-notebook-theme") === "night") {
+      document.documentElement.dataset.theme = "night";
+    }
+  } catch (error) {}
+})();
+</script>
+<link rel="stylesheet" href="t3code-orca.css">
+</head>
+<body>
+<header class="masthead">
+  <div class="wrap masthead__inner">
+    <div class="brand">
+      <svg class="brand__mark" width="33" height="33" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M3.5 3.5h5.2l1.3 1.2 1.3-1.2h5.2v11.7h-5.2L10 16.5l-1.3-1.3H3.5zM10 4.7v11.5M5.8 7h2.1m-2.1 2.5h2.1M12.4 7h1.9m-1.9 2.5h1.9" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      模型学习手账
+    </div>
+    <!-- 回到站点目录。新增笔记只改 pages.js；多于一篇时 site-nav.js 会在此插入「切换笔记」。 -->
+    <nav class="masthead__tools" id="study-nav" aria-label="笔记切换">
+      <a class="control" href="index.html">首页</a>
+      <button class="control theme-button" id="theme" type="button" aria-pressed="false" aria-label="切换夜间主题">☾ 夜间</button>
+    </nav>
+  </div>
+</header>
+<main class="wrap">
+  <div class="hero">
+    <div class="eyebrow">源码对照图解</div>
+    <p class="series-pos">第 3 页 / 共 4 页</p>
+    <p class="kicker kicker--orca">04 · Orca</p>
+    <h1>CLI 协议，加上收件箱</h1>
+    <p class="lede">Orca 把重心放在任务调度和 Agent 之间的通信：用一套 CLI 让 Agent 自己发起调度，用 Mailbox 传递结构化消息，再用 Task 和 Dispatch 的分离挡住过期完成信号。</p>
+    <p class="lede series-note">上一页是 T3 Code。这一页只看 Orca。</p>
+  </div>
+  <div class="layout">
+    <nav aria-label="页内章节">
+      <ol class="toc" id="toc">
+        <li><a href="#skill"><small>01</small>调度方式</a></li>
+        <li><a href="#mailbox"><small>02</small>Mailbox</a></li>
+        <li><a href="#entities"><small>03</small>四个实体</a></li>
+        <li><a href="#dag"><small>04</small>依赖 DAG</a></li>
+      </ol>
+    </nav>
+    <div class="sheet">
+      <section class="section" id="orca">
+        <div class="band band--orca" id="skill">
+          <h3>调度方式：orchestration Skill 教一套 CLI</h3>
+          <figure class="figure">
+            <figcaption class="figure__label">图 · 启动一个已登记任务上的 Codex</figcaption>
+            <ul class="skill-list" aria-label="这套 CLI 覆盖的动作">
+              <li>创建任务</li>
+              <li>启动 Worker</li>
+              <li>发消息</li>
+              <li>查状态</li>
+              <li>汇报结果</li>
+            </ul>
+            <div class="term" style="margin-top:10px">
+              <header><span>Orca CLI</span><span>交给 Runtime</span></header>
+              <pre><code><span>orca</span> <span>orchestration</span> <span>worker-start</span> <span>--task</span> <span>"$TASK_ID"</span> <span>--worktree</span> <span>current</span> <span>--agent</span> <span>codex</span></code></pre>
+            </div>
+            <div class="pipe" style="margin-top:10px">
+              <span class="pipe__node">Agent 运行这条命令</span>
+              <span class="pipe__arrow" aria-hidden="true">→</span>
+              <span class="pipe__node pipe__node--core" style="border-color:var(--orca-line);background:var(--orca-soft);color:var(--orca-deep)">Orca Runtime</span>
+              <span class="pipe__arrow" aria-hidden="true">→</span>
+              <span class="pipe__node">启动 Codex 执行已登记任务</span>
+            </div>
+            <p class="figure__note">Agent 不用关心其他 Agent 怎么被拉起。命令交由 Orca Runtime 处理。</p>
+          </figure>
+        </div>
+
+        <div class="band band--orca" id="mailbox">
+          <h3>Mailbox：提问、回复、做完汇报</h3>
+          <figure class="figure">
+            <figcaption class="figure__label">图 · 三种结构化消息</figcaption>
+            <div class="msgs">
+              <article class="msg">
+                <b><code>ask</code></b>
+                <span>执行中卡住，向协调者提问。</span>
+              </article>
+              <article class="msg">
+                <b><code>reply</code></b>
+                <span>协调者回复刚才的问题。</span>
+              </article>
+              <article class="msg">
+                <b><code>worker_done</code></b>
+                <span>做完之后，Worker 汇报结果。</span>
+              </article>
+            </div>
+            <div class="mail-store">
+              <b>结构化消息</b>
+              <span class="pipe__arrow" aria-hidden="true">→</span>
+              <b>SQLite</b>
+              <span class="pipe__arrow" aria-hidden="true">→</span>
+              <b>Runtime 投递并唤醒接收方</b>
+            </div>
+            <p class="figure__note">这些结构化消息持久化到 SQLite，由 Runtime 负责投递并唤醒接收方。</p>
+          </figure>
+        </div>
+
+        <div class="band band--orca" id="entities">
+          <h3>四个实体：过期的完成信号改不了当前任务</h3>
+          <figure class="figure">
+            <figcaption class="figure__label">图 · Run / Task / Dispatch / Worker</figcaption>
+            <ul class="glossary">
+              <li class="gloss"><b>Run</b><span>一次完整协作过程。</span></li>
+              <li class="gloss"><b>Task</b><span>具体任务，以及它的依赖。</span></li>
+              <li class="gloss"><b>Dispatch</b><span>一次实际派工。</span></li>
+              <li class="gloss"><b>Worker</b><span>执行这次派工的 Agent。</span></li>
+            </ul>
+          </figure>
+          <figure class="figure story" id="story" data-focus="all">
+            <figcaption class="figure__label">图 · 为什么 Task 和 Dispatch 要分开</figcaption>
+            <div class="stepper" role="group" aria-label="看过期回报的四步">
+              <button type="button" data-focus="all" aria-pressed="true">全程</button>
+              <button type="button" data-focus="1" aria-pressed="false">超时</button>
+              <button type="button" data-focus="2" aria-pressed="false">重派</button>
+              <button type="button" data-focus="3" aria-pressed="false">旧信号</button>
+              <button type="button" data-focus="4" aria-pressed="false">认 Dispatch ID</button>
+            </div>
+            <ol class="steps">
+              <li class="step" data-step="1"><i>1</i><b>执行超时</b><span>某个 Agent 这次派工超时了。</span></li>
+              <li class="step" data-step="2"><i>2</i><b>重派给新 Worker</b><span>协调者把任务再派出去，这是一次新的 Dispatch。</span></li>
+              <li class="step" data-step="3"><i>3</i><b>旧 Agent 突然回报</b><span>超时的那个 Agent 事后仍可能发来完成信号。</span></li>
+              <li class="step" data-step="4"><i>4</i><b>Dispatch ID 认出过期</b><span>系统不拿这份旧回报去改当前任务状态。</span></li>
+            </ol>
+            <div class="dispatches" style="margin-top:10px">
+              <div class="task-head">同一个 Task 还在 · 派工已经换过</div>
+              <article class="dispatch dispatch--stale">
+                <b>旧 Dispatch · Worker A</b>
+                <span>超时之后补来的完成信号。</span>
+                <em class="stamp stamp--stale">过期回报 · 忽略</em>
+              </article>
+              <article class="dispatch dispatch--live">
+                <b>新 Dispatch · Worker B</b>
+                <span>协调者重派之后，当前状态认这一次。</span>
+                <em class="stamp stamp--live">当前派工</em>
+              </article>
+            </div>
+            <p class="figure__note">Task 记住「这件工作及其依赖」。Dispatch 记住「这一次到底派给了谁」。所以旧 Worker 晚到的完成，对不上当前 Dispatch ID，就改不动任务。</p>
+          </figure>
+        </div>
+
+        <div class="band band--orca" id="dag">
+          <h3>依赖是一张 DAG</h3>
+          <figure class="figure">
+            <figcaption class="figure__label">图 · 前置都完成，下游才 ready</figcaption>
+            <div class="pair">
+              <figure class="dag is-blocked">
+                <div class="dag__row">
+                  <div class="dag__node is-done"><b>任务 A</b><span>前置 · 已完成</span></div>
+                  <div class="dag__node is-wait"><b>任务 B</b><span>前置 · 未完成</span></div>
+                </div>
+                <svg viewBox="0 0 100 36" preserveAspectRatio="none" aria-hidden="true">
+                  <path d="M25 0 V14 H75 V0 M50 14 V36" fill="none" stroke="currentColor" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+                </svg>
+                <div class="dag__node is-wait"><b>任务 C</b><span>下游 · 还不能开始</span></div>
+                <figcaption>还有前置没完成</figcaption>
+              </figure>
+              <figure class="dag">
+                <div class="dag__row">
+                  <div class="dag__node is-done"><b>任务 A</b><span>前置 · 已完成</span></div>
+                  <div class="dag__node is-done"><b>任务 B</b><span>前置 · 已完成</span></div>
+                </div>
+                <svg viewBox="0 0 100 36" preserveAspectRatio="none" aria-hidden="true">
+                  <path d="M25 0 V14 H75 V0 M50 14 V36" fill="none" stroke="currentColor" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+                </svg>
+                <div class="dag__node is-ready"><b>任务 C</b><span>下游 · ready</span></div>
+                <figcaption>Runtime 标为 ready</figcaption>
+              </figure>
+            </div>
+            <p class="figure__note">A、B、C 只用来表示依赖，不是文中的具体任务名。规则是：前置任务全部完成后，Runtime 自动把下游标为 ready，再由协调者挑选 Worker 接手。</p>
+          </figure>
+        </div>
+      </section>
+      <nav class="series-nav" aria-label="系列翻页">
+          <a class="series-nav__link series-nav__link--prev" href="t3code-orchestration.html">
+            <small>上一页</small>
+            <b>T3 Code</b>
+          </a>
+          <a class="series-nav__link series-nav__link--next" href="t3code-orca-compare.html">
+            <small>下一页</small>
+            <b>差异与趋同</b>
+          </a>
+      </nav>
+    </div>
+  </div>
+  <footer class="footer">
+    <span>模型学习手账</span>
+    <span>页顶「首页」回到目录</span>
+  </footer>
+</main>
+<script src="t3code-orca.js"></script>
+<script src="pages.js"></script>
+<script src="site-nav.js"></script>
+</body>
+</html>

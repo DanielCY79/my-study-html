@@ -7,7 +7,10 @@
 ## 现有笔记
 
 - [Transformer 拆解手账](transformer.html)：用九章互动实验拆开 Transformer，从分词一路算到下一个 token。
-- [T3 Code 与 Orca：多 Agent 编排图解](t3code-orca.html)：图解 T3 Code 与 Orca 如何在 Coding Agent 之上架起编排层：委派、通信、上下文交接与失败恢复。
+- [T3 Code 与 Orca：协作为什么难](t3code-orca.html)：同时拉起多个 Coding Agent 并不难。难的是让它们顺畅地委派任务、互相通信、交接上下文，并在出错后可靠恢复。
+- [T3 Code：MCP 委派，加上事件驱动](t3code-orchestration.html)：T3 Code 偏向统一运行协议与状态管理。核心是三件事：把协作包成工具调用、用事件把状态留下、把应用会话和原生会话分开交接。
+- [Orca：CLI 协议，加上收件箱](orca-orchestration.html)：Orca 把重心放在任务调度和 Agent 之间的通信：用一套 CLI 让 Agent 自己发起调度，用 Mailbox 传递结构化消息，再用 Task 和 Dispatch 的分离挡住过期完成信号。
+- [T3 Code 与 Orca：差异、趋同与操作系统](t3code-orca-compare.html)：T3 Code 侧重统一运行协议、会话管理、上下文交接和事件流。Orca 侧重任务依赖、派工隔离、结构化通信和 Worker 生命周期。两边的能力也在互相靠拢。
 
 ## 新增一篇笔记
 
