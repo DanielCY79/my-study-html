@@ -26,6 +26,12 @@
       title: "Transformer 拆解手账",
       description: "用九章互动实验拆开 Transformer，从分词一路算到下一个 token。",
       eyebrow: "交互式学习手账"
+    },
+    {
+      href: "t3code-orca.html",
+      title: "T3 Code 与 Orca：多 Agent 编排图解",
+      description: "图解 T3 Code 与 Orca 如何在 Coding Agent 之上架起编排层：委派、通信、上下文交接与失败恢复。",
+      eyebrow: "源码对照图解"
     }
   ];
 
