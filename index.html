@@ -1,0 +1,323 @@
+<!doctype html>
+<!--
+  站点首页 / 笔记目录。
+  列表来自 pages.js 的 STUDY_PAGES，不要在这里再手写一份目录。
+  新增一篇笔记的步骤写在 pages.js 顶部，README.md 有同样的说明。
+-->
+<html lang="zh-CN" data-theme="day">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="模型学习手账的笔记目录。从这里打开每一篇 HTML 笔记，也可以再回到首页切换。">
+<title>笔记目录 · 模型学习手账</title>
+<script>
+(function () {
+  try {
+    if (localStorage.getItem("transformer-notebook-theme") === "night") {
+      document.documentElement.dataset.theme = "night";
+    }
+  } catch (error) {}
+})();
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --paper: #f4ebe0;
+  --sheet: #fff9f1;
+  --canvas: #faf3e9;
+  --quiet: #efe4d7;
+  --border: #dacabc;
+  --ink: #342820;
+  --muted: #695a4e;
+  --accent: #983e2b;
+  --accent-ink: #fff8f0;
+  --tint: #f3ded3;
+  --shadow: 0 5px 18px #64432b0b;
+  --serif: Georgia, "Songti SC", "Noto Serif CJK SC", "SimSun", serif;
+  --sans: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+:root[data-theme="night"] {
+  color-scheme: dark;
+  --paper: #211e1a;
+  --sheet: #2a2520;
+  --canvas: #27231f;
+  --quiet: #332b25;
+  --border: #514237;
+  --ink: #f7e8d6;
+  --muted: #c4ae99;
+  --accent: #f0a28a;
+  --accent-ink: #321d16;
+  --tint: #462e27;
+  --shadow: 0 5px 18px #140e0a22;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-width: 300px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.65 var(--sans);
+  transition: background-color .25s, color .25s;
+}
+button { font: inherit; color: var(--ink); cursor: pointer; }
+a { color: var(--accent); }
+h1, p { margin: 0; }
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.wrap { width: min(820px, calc(100% - 40px)); margin-inline: auto; }
+.masthead { border-bottom: 1px solid var(--border); }
+.masthead__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 66px;
+  flex-wrap: wrap;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 750;
+  letter-spacing: .045em;
+  font-size: .91rem;
+}
+.brand__mark {
+  color: var(--accent);
+  background: var(--tint);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+}
+.control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 35px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 11px;
+  background: var(--sheet);
+  color: var(--ink);
+  font-size: .875rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  transition: border-color .18s, background-color .18s, color .18s, transform .18s;
+}
+.control:hover { border-color: var(--accent); color: var(--accent); }
+.control:active { transform: translateY(1px); }
+.hero { padding-block: 28px 20px; }
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+  font-size: .85rem;
+  font-weight: 750;
+  letter-spacing: .11em;
+}
+.eyebrow::before { content: ""; width: 19px; border-top: 1px solid currentColor; }
+.hero h1 {
+  margin: 8px 0 7px;
+  font: 700 clamp(2rem, 6vw, 3.15rem)/1.17 var(--serif);
+  letter-spacing: -.045em;
+}
+.lede { max-width: 38em; color: var(--muted); font-size: 1rem; text-wrap: pretty; }
+.count {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font: .82rem var(--mono);
+  letter-spacing: .04em;
+}
+.catalog { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.entry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px 18px 14px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--sheet);
+  box-shadow: var(--shadow);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color .18s, transform .18s;
+}
+.entry:hover { border-color: var(--accent); }
+.entry:active { transform: translateY(1px); }
+.entry__top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.entry__index {
+  flex: none;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: var(--tint);
+  color: var(--accent);
+  font: 700 .82rem/1 var(--mono);
+}
+.entry__eyebrow {
+  color: var(--accent);
+  font-size: .85rem;
+  font-weight: 750;
+  letter-spacing: .08em;
+}
+.entry__title {
+  font: 700 clamp(1.35rem, 3vw, 1.7rem)/1.28 var(--serif);
+  letter-spacing: -.03em;
+}
+.entry__desc { color: var(--muted); font-size: .98rem; text-wrap: pretty; }
+.entry__go {
+  align-self: stretch;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--accent);
+  font-size: .9rem;
+  font-weight: 700;
+}
+.entry__go span { display: inline-block; transition: transform .18s; }
+.entry:hover .entry__go span { transform: translateX(3px); }
+.notice {
+  margin: 0;
+  padding: 16px 18px;
+  border: 1px dashed var(--border);
+  border-radius: 13px;
+  background: var(--sheet);
+  color: var(--muted);
+}
+.footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding-block: 22px 28px;
+  color: var(--muted);
+  font-size: .8rem;
+}
+@media (max-width: 660px) {
+  .wrap { width: calc(100% - 28px); }
+  .masthead__inner { min-height: 53px; }
+  .hero { padding-block: 22px 16px; }
+  .entry { padding: 16px 14px 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+</style>
+</head>
+<body>
+<header class="masthead">
+  <div class="wrap masthead__inner">
+    <div class="brand">
+      <svg class="brand__mark" width="33" height="33" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M3.5 3.5h5.2l1.3 1.2 1.3-1.2h5.2v11.7h-5.2L10 16.5l-1.3-1.3H3.5zM10 4.7v11.5M5.8 7h2.1m-2.1 2.5h2.1M12.4 7h1.9m-1.9 2.5h1.9" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      模型学习手账
+    </div>
+    <button class="control theme-button" id="theme" type="button" aria-pressed="false" aria-label="切换夜间主题">☾ 夜间</button>
+  </div>
+</header>
+<main class="wrap">
+  <div class="hero">
+    <div class="eyebrow">学习笔记</div>
+    <h1>笔记目录</h1>
+    <p class="lede">点开一篇开始读。笔记页顶的「首页」会回到这里。</p>
+  </div>
+  <p class="count" id="page-count"></p>
+  <div id="catalog">
+    <noscript>
+      <p class="notice">目录脚本没有运行。可以直接打开 <a href="transformer.html">Transformer 拆解手账</a>。</p>
+    </noscript>
+  </div>
+  <footer class="footer">
+    <span>模型学习手账</span>
+    <span>从目录进入，用页顶的「首页」返回</span>
+  </footer>
+</main>
+<script src="pages.js"></script>
+<script>
+"use strict";
+
+const catalog = document.getElementById("catalog");
+const pageCount = document.getElementById("page-count");
+const themeButton = document.getElementById("theme");
+
+function setTheme(night) {
+  document.documentElement.dataset.theme = night ? "night" : "day";
+  themeButton.setAttribute("aria-pressed", night);
+  themeButton.setAttribute("aria-label", night ? "切换日间主题" : "切换夜间主题");
+  themeButton.textContent = night ? "☀ 日间" : "☾ 夜间";
+  try { localStorage.setItem("transformer-notebook-theme", night ? "night" : "day"); } catch (error) {}
+}
+
+setTheme(document.documentElement.dataset.theme === "night");
+themeButton.addEventListener("click", () => setTheme(document.documentElement.dataset.theme !== "night"));
+window.addEventListener("storage", event => {
+  if (event.key === "transformer-notebook-theme" && event.newValue) setTheme(event.newValue === "night");
+});
+
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function showNotice(node) {
+  catalog.replaceChildren(node);
+}
+
+function renderCatalog() {
+  let pages;
+  try {
+    if (typeof studyPages !== "function") throw new Error("missing manifest");
+    pages = studyPages();
+  } catch (error) {
+    pageCount.textContent = "";
+    const note = element("p", "notice");
+    note.append("目录没有载入。可以直接打开 ");
+    const link = element("a", "", "Transformer 拆解手账");
+    link.href = "transformer.html";
+    note.append(link, "。");
+    showNotice(note);
+    return;
+  }
+
+  pageCount.textContent = pages.length ? "共 " + pages.length + " 篇" : "还没有笔记";
+  if (!pages.length) {
+    showNotice(element("p", "notice", "还没有登记笔记。写好 HTML 后，按 pages.js 顶部的说明加一条即可。"));
+    return;
+  }
+
+  const list = element("ol", "catalog");
+  pages.forEach((page, index) => {
+    const item = element("li");
+    const link = element("a", "entry");
+    link.href = page.href;
+    const top = element("span", "entry__top");
+    top.append(element("span", "entry__index", String(index + 1).padStart(2, "0")));
+    if (page.eyebrow) top.append(element("span", "entry__eyebrow", page.eyebrow));
+    link.append(top, element("span", "entry__title", page.title));
+    if (page.description) link.append(element("span", "entry__desc", page.description));
+    const go = element("span", "entry__go");
+    go.append("打开这篇 ", element("span", "", "→"));
+    go.lastElementChild.setAttribute("aria-hidden", "true");
+    link.append(go);
+    item.append(link);
+    list.append(item);
+  });
+  showNotice(list);
+}
+
+renderCatalog();
+</script>
+</body>
+</html>
