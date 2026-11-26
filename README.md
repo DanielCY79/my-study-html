@@ -7,6 +7,7 @@
 ## 现有笔记
 
 - [Transformer 拆解手账](transformer.html)：用九章互动实验拆开 Transformer，从分词一路算到下一个 token。
+- [T3 Code 与 Orca：多 Agent 编排图解](t3code-orca.html)：图解 T3 Code 与 Orca 如何在 Coding Agent 之上架起编排层：委派、通信、上下文交接与失败恢复。
 
 ## 新增一篇笔记
 
